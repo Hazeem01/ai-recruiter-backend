@@ -37,7 +37,7 @@ info:
 servers:
   - url: http://localhost:3001
     description: Development server
-  - url: https://api.airecruiter.com
+  - url: https://ai-recruiter-backend-qq29.onrender.com
     description: Production server
 
 security:
