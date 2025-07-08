@@ -1,0 +1,29 @@
+version: '3.8'
+services:
+  backend:
+    build: .
+    container_name: ai-recruiter-backend
+    env_file: .env
+    ports:
+      - "3001:3001"
+    depends_on:
+      - db
+    # Uncomment the following lines and set DB env vars if you want to use local Postgres
+    # environment:
+    #   - DATABASE_URL=postgres://postgres:postgres@db:5432/ai_recruiter
+
+  db:
+    image: postgres:15
+    container_name: ai-recruiter-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_recruiter
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata: 

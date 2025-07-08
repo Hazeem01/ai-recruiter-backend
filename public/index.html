@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Recruiter Backend API</title>
+  <link href="https://fonts.googleapis.com/css?family=Inter:400,600&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', Arial, sans-serif;
+      background: #f7f9fb;
+      color: #222;
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      max-width: 800px;
+      margin: 40px auto;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.07);
+      padding: 40px 32px 32px 32px;
+    }
+    h1 {
+      font-size: 2.5rem;
+      margin-bottom: 0.2em;
+      color: #2a4d8f;
+    }
+    .tagline {
+      font-size: 1.2rem;
+      color: #4b6584;
+      margin-bottom: 1.5em;
+    }
+    .status {
+      display: flex;
+      align-items: center;
+      margin-bottom: 1.5em;
+    }
+    .status-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #27ae60;
+      margin-right: 0.5em;
+      box-shadow: 0 0 8px #27ae60;
+    }
+    .features, .endpoints, .examples {
+      margin-bottom: 2em;
+    }
+    .features ul, .endpoints ul {
+      padding-left: 1.2em;
+    }
+    .features li, .endpoints li {
+      margin-bottom: 0.5em;
+    }
+    .swagger-link {
+      display: inline-block;
+      background: #2a4d8f;
+      color: #fff;
+      padding: 0.7em 1.5em;
+      border-radius: 6px;
+      text-decoration: none;
+      font-weight: 600;
+      margin-bottom: 1.5em;
+      transition: background 0.2s;
+    }
+    .swagger-link:hover {
+      background: #1b335a;
+    }
+    pre {
+      background: #f4f6fa;
+      border-radius: 6px;
+      padding: 1em;
+      font-size: 0.98em;
+      overflow-x: auto;
+    }
+    .contact {
+      margin-top: 2em;
+      font-size: 1em;
+      color: #4b6584;
+    }
+    @media (max-width: 600px) {
+      .container { padding: 20px 8px; }
+      h1 { font-size: 2rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>AI Recruiter Backend API</h1>
+    <div class="tagline">A modern, AI-powered recruitment platform for recruiters and job applicants.</div>
+    <div class="status">
+      <span class="status-dot"></span>
+      <span>API Status: <strong>Online</strong></span>
+    </div>
+    <a class="swagger-link" href="/docs" target="_blank">View Interactive API Docs (Swagger)</a>
+    <div class="features">
+      <h2>Key Features</h2>
+      <ul>
+        <li>🔒 Secure JWT Authentication</li>
+        <li>🧑‍💼 Recruiter & Applicant Workflows</li>
+        <li>🏢 Company & Team Management</li>
+        <li>📄 Resume & Cover Letter Generation (AI)</li>
+        <li>📊 Analytics & Dashboard</li>
+        <li>💬 AI Chat Assistant</li>
+        <li>📁 File Upload & Management</li>
+        <li>🛡️ Rate Limiting & Security</li>
+      </ul>
+    </div>
+    <div class="endpoints">
+      <h2>Popular Endpoints</h2>
+      <ul>
+        <li><strong>POST</strong> <code>/api/v1/auth/register</code> – Register user (with company support)</li>
+        <li><strong>POST</strong> <code>/api/v1/auth/login</code> – User login</li>
+        <li><strong>GET</strong> <code>/api/v1/companies</code> – List companies</li>
+        <li><strong>POST</strong> <code>/api/v1/companies</code> – Create company</li>
+        <li><strong>GET</strong> <code>/api/v1/dashboard/jobs</code> – Recruiter jobs</li>
+        <li><strong>POST</strong> <code>/api/v1/applicant/ai/generate-resume</code> – AI resume generation</li>
+        <li><strong>POST</strong> <code>/api/v1/chat/message</code> – AI chat assistant</li>
+      </ul>
+    </div>
+    <div class="examples">
+      <h2>Example: Register Recruiter with Company</h2>
+      <pre>{
+  "email": "recruiter@company.com",
+  "password": "password123",
+  "firstName": "Jane",
+  "lastName": "Smith",
+  "role": "recruiter",
+  "company": {
+    "name": "Tech Corp",
+    "description": "A technology company",
+    "website": "https://techcorp.com",
+    "industry": "Technology",
+    "size": "medium",
+    "location": "San Francisco, CA",
+    "foundedYear": 2020
+  }
+}</pre>
+      <h2>Quick Test (cURL)</h2>
+      <pre>curl -X POST http://localhost:3001/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "recruiter@company.com",
+    "password": "password123",
+    "firstName": "Jane",
+    "lastName": "Smith",
+    "role": "recruiter",
+    "company": {
+      "name": "Tech Corp",
+      "description": "A technology company",
+      "website": "https://techcorp.com",
+      "industry": "Technology",
+      "size": "medium",
+      "location": "San Francisco, CA",
+      "foundedYear": 2020
+    }
+  }'
+</pre>
+    </div>
+    <div class="contact">
+      <strong>Contact:</strong> hazeem4877@gmail.com<br>
+      <a href="/docs" target="_blank">API Documentation</a>
+    </div>
+  </div>
+</body>
+</html> 

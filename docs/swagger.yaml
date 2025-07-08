@@ -1,0 +1,2401 @@
+openapi: 3.0.3
+info:
+  title: AI Recruiter Backend API
+  description: |
+    A comprehensive two-sided recruitment platform API that serves both recruiters and job applicants.
+    
+    ## Features
+    
+    ### For Recruiters:
+    - Dashboard with analytics and metrics
+    - Job posting management (CRUD operations)
+    - Candidate management and filtering
+    - Interview scheduling
+    - AI-powered candidate evaluation
+    
+    ### For Job Applicants:
+    - Resume upload and parsing
+    - AI-powered resume and cover letter generation
+    - Job analysis from URLs or text
+    - PDF export functionality
+    - AI chat assistant for career guidance
+    
+    ### General Features:
+    - User authentication and authorization
+    - File management and storage
+    - Real-time chat with AI
+    - Comprehensive logging and error handling
+    
+  version: 1.0.0
+  contact:
+    name: AI Recruiter Team
+    email: hazeem4877@gmail.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3001
+    description: Development server
+  - url: https://api.airecruiter.com
+    description: Production server
+
+security:
+  - BearerAuth: []
+
+paths:
+  /health:
+    get:
+      summary: Health check endpoint
+      description: Returns the health status of the API
+      tags:
+        - System
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                        example: "healthy"
+                      timestamp:
+                        type: string
+                        format: date-time
+                      uptime:
+                        type: number
+                      environment:
+                        type: string
+                        example: "development"
+
+  /api/v1/auth/register:
+    post:
+      summary: Register a new user
+      description: Create a new user account with role-based access
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+                - firstName
+                - lastName
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: "john.doe@example.com"
+                password:
+                  type: string
+                  minLength: 8
+                  example: "securePassword123"
+                firstName:
+                  type: string
+                  minLength: 2
+                  maxLength: 50
+                  example: "John"
+                lastName:
+                  type: string
+                  minLength: 2
+                  maxLength: 50
+                  example: "Doe"
+                role:
+                  type: string
+                  enum: [recruiter, applicant]
+                  default: applicant
+                  example: "applicant"
+                company:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                      minLength: 2
+                      maxLength: 255
+                      example: "Tech Corp"
+                    description:
+                      type: string
+                      maxLength: 1000
+                      example: "A leading technology company"
+                    website:
+                      type: string
+                      format: uri
+                      example: "https://techcorp.com"
+                    industry:
+                      type: string
+                      maxLength: 100
+                      example: "Technology"
+                    size:
+                      type: string
+                      enum: [startup, small, medium, large, enterprise]
+                      example: "medium"
+                    location:
+                      type: string
+                      maxLength: 255
+                      example: "San Francisco, CA"
+                    foundedYear:
+                      type: integer
+                      minimum: 1800
+                      maximum: 2025
+                      example: 2020
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        $ref: '#/components/schemas/User'
+                      token:
+                        type: string
+                        example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+  /api/v1/auth/login:
+    post:
+      summary: User login
+      description: Authenticate user and return JWT token
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: "john.doe@example.com"
+                password:
+                  type: string
+                  example: "securePassword123"
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        $ref: '#/components/schemas/User'
+                      token:
+                        type: string
+                        example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+  /api/v1/auth/logout:
+    post:
+      summary: User logout
+      description: Logout user and invalidate session
+      tags:
+        - Authentication
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: "Logged out successfully"
+
+  /api/v1/auth/me:
+    get:
+      summary: Get current user
+      description: Retrieve current user information
+      tags:
+        - Authentication
+      responses:
+        '200':
+          description: User information retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        $ref: '#/components/schemas/User'
+
+  /api/v1/dashboard/stats:
+    get:
+      summary: Get dashboard statistics
+      description: Retrieve dashboard metrics for recruiters
+      tags:
+        - Dashboard
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Dashboard stats retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/DashboardStats'
+
+  /api/v1/dashboard/jobs:
+    get:
+      summary: List jobs
+      description: Retrieve all jobs with filtering and pagination
+      tags:
+        - Jobs
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, inactive, draft]
+          description: Filter by job status
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search in job titles
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: Page number
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+          description: Items per page
+      responses:
+        '200':
+          description: Jobs retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      jobs:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Job'
+                      pagination:
+                        $ref: '#/components/schemas/Pagination'
+
+    post:
+      summary: Create job posting
+      description: Create a new job posting
+      tags:
+        - Jobs
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - description
+              properties:
+                title:
+                  type: string
+                  minLength: 5
+                  maxLength: 200
+                  example: "Senior Software Engineer"
+                description:
+                  type: string
+                  minLength: 50
+                  maxLength: 5000
+                  example: "We are looking for a senior software engineer..."
+                requirements:
+                  type: array
+                  items:
+                    type: string
+                  example: ["JavaScript", "React", "Node.js"]
+                location:
+                  type: string
+                  maxLength: 100
+                  example: "San Francisco, CA"
+                salary:
+                  type: string
+                  maxLength: 50
+                  example: "$120,000 - $150,000"
+                type:
+                  type: string
+                  enum: [full-time, part-time, contract, internship]
+                  example: "full-time"
+                status:
+                  type: string
+                  enum: [active, inactive, draft]
+                  default: active
+                  example: "active"
+      responses:
+        '201':
+          description: Job created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/Job'
+
+  /api/v1/dashboard/jobs/{id}:
+    put:
+      summary: Update job posting
+      description: Update an existing job posting
+      tags:
+        - Jobs
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Job ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  minLength: 5
+                  maxLength: 200
+                description:
+                  type: string
+                  minLength: 50
+                  maxLength: 5000
+                requirements:
+                  type: array
+                  items:
+                    type: string
+                location:
+                  type: string
+                  maxLength: 100
+                salary:
+                  type: string
+                  maxLength: 50
+                type:
+                  type: string
+                  enum: [full-time, part-time, contract, internship]
+                status:
+                  type: string
+                  enum: [active, inactive, draft]
+      responses:
+        '200':
+          description: Job updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/Job'
+
+    delete:
+      summary: Delete job posting
+      description: Delete a job posting
+      tags:
+        - Jobs
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Job ID
+      responses:
+        '200':
+          description: Job deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: "Job deleted successfully"
+
+  /api/v1/dashboard/candidates:
+    get:
+      summary: List candidates
+      description: Retrieve candidates with filtering and pagination
+      tags:
+        - Candidates
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [applied, reviewing, interviewed, hired, rejected]
+          description: Filter by candidate status
+        - name: jobId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter by job ID
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: Page number
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+          description: Items per page
+      responses:
+        '200':
+          description: Candidates retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      candidates:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Candidate'
+                      pagination:
+                        $ref: '#/components/schemas/Pagination'
+
+  /api/v1/dashboard/candidates/{id}:
+    get:
+      summary: Get candidate details
+      description: Retrieve detailed information about a candidate
+      tags:
+        - Candidates
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Candidate ID
+      responses:
+        '200':
+          description: Candidate details retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/CandidateDetails'
+
+  /api/v1/applicant/resumes/upload:
+    post:
+      summary: Upload resume file
+      description: Upload a resume file (PDF, DOC, DOCX, TXT)
+      tags:
+        - Applicant Features
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                resume:
+                  type: string
+                  format: binary
+                  description: Resume file to upload
+      responses:
+        '201':
+          description: Resume uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      fileId:
+                        type: string
+                        format: uuid
+                      filename:
+                        type: string
+                      fileUrl:
+                        type: string
+                      fileSize:
+                        type: integer
+
+  /api/v1/applicant/resumes/parse:
+    post:
+      summary: Parse resume text
+      description: Extract and parse content from uploaded resume
+      tags:
+        - Applicant Features
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - fileId
+              properties:
+                fileId:
+                  type: string
+                  format: uuid
+                  example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        '200':
+          description: Resume parsed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      resumeId:
+                        type: string
+                        format: uuid
+                      parsedContent:
+                        $ref: '#/components/schemas/ParsedResume'
+
+  /api/v1/applicant/ai/analyze-job:
+    post:
+      summary: Analyze job posting
+      description: Analyze job posting from URL or text using AI
+      tags:
+        - Applicant Features
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                jobUrl:
+                  type: string
+                  format: uri
+                  example: "https://example.com/job-posting"
+                jobText:
+                  type: string
+                  minLength: 50
+                  maxLength: 10000
+                  example: "We are looking for a software engineer..."
+      responses:
+        '200':
+          description: Job analysis completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      analysis:
+                        type: string
+                      originalContent:
+                        type: string
+
+  /api/v1/applicant/ai/generate-resume:
+    post:
+      summary: Generate tailored resume
+      description: Generate a tailored resume using AI
+      tags:
+        - Applicant Features
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResumeGenerationRequest'
+      responses:
+        '200':
+          description: Resume generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/GeneratedContent'
+
+  /api/v1/applicant/ai/generate-cover-letter:
+    post:
+      summary: Generate cover letter
+      description: Generate a tailored cover letter using AI
+      tags:
+        - Applicant Features
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CoverLetterGenerationRequest'
+      responses:
+        '200':
+          description: Cover letter generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/GeneratedContent'
+
+  /api/v1/applicant/export/resume:
+    post:
+      summary: Export resume as PDF
+      description: Export generated resume as PDF
+      tags:
+        - Applicant Features
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PdfExportRequest'
+      responses:
+        '200':
+          description: PDF generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      pdfBase64:
+                        type: string
+                      downloadUrl:
+                        type: string
+
+  /api/v1/applicant/export/cover-letter:
+    post:
+      summary: Export cover letter as PDF
+      description: Export generated cover letter as PDF
+      tags:
+        - Applicant Features
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PdfExportRequest'
+      responses:
+        '200':
+          description: PDF generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      pdfBase64:
+                        type: string
+                      downloadUrl:
+                        type: string
+
+  /api/v1/applicant/interviews:
+    get:
+      summary: List interviews
+      description: Retrieve interviews for current user
+      tags:
+        - Interviews
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [scheduled, completed, cancelled]
+          description: Filter by interview status
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: Page number
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+          description: Items per page
+      responses:
+        '200':
+          description: Interviews retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      interviews:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Interview'
+                      pagination:
+                        $ref: '#/components/schemas/Pagination'
+
+    post:
+      summary: Schedule interview
+      description: Schedule a new interview (recruiters only)
+      tags:
+        - Interviews
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - candidateId
+                - jobId
+                - scheduledAt
+              properties:
+                candidateId:
+                  type: string
+                  format: uuid
+                  example: "123e4567-e89b-12d3-a456-426614174000"
+                jobId:
+                  type: string
+                  format: uuid
+                  example: "123e4567-e89b-12d3-a456-426614174001"
+                scheduledAt:
+                  type: string
+                  format: date-time
+                  example: "2024-01-15T10:00:00Z"
+                duration:
+                  type: integer
+                  minimum: 15
+                  maximum: 480
+                  default: 60
+                  example: 60
+                type:
+                  type: string
+                  enum: [video, phone, onsite]
+                  default: video
+                  example: "video"
+                notes:
+                  type: string
+                  maxLength: 1000
+                  example: "Please prepare for technical questions"
+      responses:
+        '201':
+          description: Interview scheduled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/Interview'
+
+  /api/v1/applicant/pro/signup:
+    post:
+      summary: Pro version signup
+      description: Sign up for pro version features
+      tags:
+        - Applicant Features
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - firstName
+                - lastName
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: "john.doe@example.com"
+                firstName:
+                  type: string
+                  minLength: 2
+                  maxLength: 50
+                  example: "John"
+                lastName:
+                  type: string
+                  minLength: 2
+                  maxLength: 50
+                  example: "Doe"
+                company:
+                  type: string
+                  maxLength: 100
+                  example: "Tech Corp"
+                role:
+                  type: string
+                  enum: [recruiter, applicant]
+                  default: applicant
+                  example: "applicant"
+      responses:
+        '201':
+          description: Pro signup successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: "Pro signup successful. We will contact you soon!"
+                      signupId:
+                        type: string
+                        format: uuid
+
+  /api/v1/chat/message:
+    post:
+      summary: Send chat message
+      description: Send a message to AI chat assistant
+      tags:
+        - Chat
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+              properties:
+                message:
+                  type: string
+                  minLength: 1
+                  maxLength: 2000
+                  example: "How can I improve my resume?"
+                context:
+                  type: string
+                  enum: [general, resume, interview, job_search, recruiter]
+                  default: general
+                  example: "resume"
+      responses:
+        '200':
+          description: AI response received
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                      context:
+                        type: string
+                      timestamp:
+                        type: string
+                        format: date-time
+
+  /api/v1/chat/history:
+    get:
+      summary: Get chat history
+      description: Retrieve chat conversation history
+      tags:
+        - Chat
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: context
+          in: query
+          schema:
+            type: string
+            enum: [general, resume, interview, job_search, recruiter]
+          description: Filter by chat context
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          description: Number of messages to retrieve
+      responses:
+        '200':
+          description: Chat history retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      conversations:
+                        type: array
+                        items:
+                          type: array
+                          items:
+                            $ref: '#/components/schemas/ChatMessage'
+                      totalMessages:
+                        type: integer
+                      context:
+                        type: string
+
+  /api/v1/chat/suggestions:
+    get:
+      summary: Get chat suggestions
+      description: Get suggested questions for AI chat
+      tags:
+        - Chat
+      parameters:
+        - name: context
+          in: query
+          schema:
+            type: string
+            enum: [general, resume, interview, job_search, recruiter]
+            default: general
+          description: Context for suggestions
+      responses:
+        '200':
+          description: Chat suggestions retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      suggestions:
+                        type: array
+                        items:
+                          type: string
+                      context:
+                        type: string
+
+  /api/v1/files/upload:
+    post:
+      summary: Upload file
+      description: Upload a file to storage
+      tags:
+        - Files
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: File to upload
+                category:
+                  type: string
+                  enum: [general, resumes, avatars, documents]
+                  default: general
+                  description: File category
+      responses:
+        '201':
+          description: File uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      fileId:
+                        type: string
+                        format: uuid
+                      filename:
+                        type: string
+                      fileUrl:
+                        type: string
+                      fileSize:
+                        type: integer
+                      category:
+                        type: string
+                      mimeType:
+                        type: string
+
+  /api/v1/files/{id}:
+    get:
+      summary: Get file information
+      description: Retrieve file information by ID
+      tags:
+        - Files
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: File ID
+      responses:
+        '200':
+          description: File information retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/File'
+
+    delete:
+      summary: Delete file
+      description: Delete a file by ID
+      tags:
+        - Files
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+
+  /api/v1/companies:
+    get:
+      summary: List companies
+      description: Get all companies with optional filters
+      tags:
+        - Companies
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: industry
+          in: query
+          schema:
+            type: string
+          description: Filter by industry
+        - name: size
+          in: query
+          schema:
+            type: string
+            enum: [startup, small, medium, large, enterprise]
+          description: Filter by company size
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search by company name
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: Page number
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: Number of companies per page
+      responses:
+        '200':
+          description: Companies retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      companies:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Company'
+                      pagination:
+                        $ref: '#/components/schemas/Pagination'
+
+    post:
+      summary: Create company
+      description: Create a new company
+      tags:
+        - Companies
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 255
+                  example: "Tech Corp"
+                description:
+                  type: string
+                  maxLength: 1000
+                  example: "A leading technology company"
+                website:
+                  type: string
+                  format: uri
+                  example: "https://techcorp.com"
+                industry:
+                  type: string
+                  maxLength: 100
+                  example: "Technology"
+                size:
+                  type: string
+                  enum: [startup, small, medium, large, enterprise]
+                  example: "medium"
+                location:
+                  type: string
+                  maxLength: 255
+                  example: "San Francisco, CA"
+                foundedYear:
+                  type: integer
+                  minimum: 1800
+                  maximum: 2025
+                  example: 2020
+      responses:
+        '201':
+          description: Company created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      company:
+                        $ref: '#/components/schemas/Company'
+
+  /api/v1/companies/{companyId}:
+    get:
+      summary: Get company by ID
+      description: Retrieve company details by ID
+      tags:
+        - Companies
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: companyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Company ID
+      responses:
+        '200':
+          description: Company details retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      company:
+                        $ref: '#/components/schemas/Company'
+
+    put:
+      summary: Update company
+      description: Update company information
+      tags:
+        - Companies
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: companyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Company ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 255
+                  example: "Tech Corp"
+                description:
+                  type: string
+                  maxLength: 1000
+                  example: "A leading technology company"
+                website:
+                  type: string
+                  format: uri
+                  example: "https://techcorp.com"
+                industry:
+                  type: string
+                  maxLength: 100
+                  example: "Technology"
+                size:
+                  type: string
+                  enum: [startup, small, medium, large, enterprise]
+                  example: "medium"
+                location:
+                  type: string
+                  maxLength: 255
+                  example: "San Francisco, CA"
+                foundedYear:
+                  type: integer
+                  minimum: 1800
+                  maximum: 2025
+                  example: 2020
+                logoUrl:
+                  type: string
+                  format: uri
+                  example: "https://storage.example.com/logos/techcorp.png"
+      responses:
+        '200':
+          description: Company updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      company:
+                        $ref: '#/components/schemas/Company'
+
+  /api/v1/companies/{companyId}/users:
+    get:
+      summary: Get company users
+      description: Get all users associated with a company
+      tags:
+        - Companies
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: companyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Company ID
+      responses:
+        '200':
+          description: Company users retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      users:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/CompanyUser'
+
+    post:
+      summary: Add user to company
+      description: Add a user to a company
+      tags:
+        - Companies
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: companyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Company ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - userId
+              properties:
+                userId:
+                  type: string
+                  format: uuid
+                  example: "123e4567-e89b-12d3-a456-426614174001"
+      responses:
+        '200':
+          description: User added to company successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        $ref: '#/components/schemas/CompanyUser'
+
+  /api/v1/companies/{companyId}/users/{userId}:
+    delete:
+      summary: Remove user from company
+      description: Remove a user from a company
+      tags:
+        - Companies
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: companyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Company ID
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: User ID
+      responses:
+        '200':
+          description: User removed from company successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        $ref: '#/components/schemas/CompanyUser'
+
+  /api/v1/analytics/api:
+    get:
+      summary: Get API analytics
+      description: Get API usage analytics (admin only)
+      tags:
+        - Analytics
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+          description: Start date for analytics
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+          description: End date for analytics
+        - name: groupBy
+          in: query
+          schema:
+            type: string
+            enum: [hour, day, week, month]
+          description: Group analytics by time period
+      responses:
+        '200':
+          description: API analytics retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      analytics:
+                        type: object
+                        properties:
+                          totalRequests:
+                            type: integer
+                          uniqueUsers:
+                            type: integer
+                          averageResponseTime:
+                            type: number
+                          topEndpoints:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                endpoint:
+                                  type: string
+                                requests:
+                                  type: integer
+
+  /api/v1/analytics/rate-limits:
+    get:
+      summary: Get rate limit statistics
+      description: Get rate limiting statistics (admin only)
+      tags:
+        - Analytics
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Rate limit statistics retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      rateLimits:
+                        type: object
+                        properties:
+                          totalBlocked:
+                            type: integer
+                          topBlockedIPs:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                ip:
+                                  type: string
+                                blockedCount:
+                                  type: integer
+
+  /api/v1/analytics/health:
+    get:
+      summary: Get system health
+      description: Get comprehensive system health status
+      tags:
+        - Analytics
+      responses:
+        '200':
+          description: System health status retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                        enum: [healthy, degraded, unhealthy]
+                      database:
+                        type: string
+                        enum: [healthy, unhealthy]
+                      ai:
+                        type: string
+                        enum: [healthy, unhealthy]
+                      storage:
+                        type: string
+                        enum: [healthy, unhealthy]
+                      timestamp:
+                        type: string
+                        format: date-time
+                      uptime:
+                        type: number
+                      memory:
+                        type: object
+                        properties:
+                          rss:
+                            type: number
+                          heapTotal:
+                            type: number
+                          heapUsed:
+                            type: number
+                      environment:
+                        type: string
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: File ID
+      responses:
+        '200':
+          description: File deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: "File deleted successfully"
+                      fileId:
+                        type: string
+                        format: uuid
+
+  /api/v1/files/{id}/download:
+    get:
+      summary: Download file
+      description: Download a file by ID
+      tags:
+        - Files
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: File ID
+      responses:
+        '200':
+          description: File download initiated
+          headers:
+            Content-Type:
+              schema:
+                type: string
+            Content-Disposition:
+              schema:
+                type: string
+            Content-Length:
+              schema:
+                type: integer
+
+  /api/v1/files/user/files:
+    get:
+      summary: Get user files
+      description: Retrieve files uploaded by current user
+      tags:
+        - Files
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: category
+          in: query
+          schema:
+            type: string
+            enum: [general, resumes, avatars, documents]
+          description: Filter by file category
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: Page number
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: Items per page
+      responses:
+        '200':
+          description: User files retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      files:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/File'
+                      pagination:
+                        $ref: '#/components/schemas/Pagination'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        email:
+          type: string
+          format: email
+          example: "john.doe@example.com"
+        firstName:
+          type: string
+          example: "John"
+        lastName:
+          type: string
+          example: "Doe"
+        role:
+          type: string
+          enum: [recruiter, applicant, admin]
+          example: "applicant"
+        company:
+          type: string
+          example: "Tech Corp"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-01-01T00:00:00Z"
+
+    DashboardStats:
+      type: object
+      properties:
+        totalJobs:
+          type: integer
+          example: 25
+        activeJobs:
+          type: integer
+          example: 18
+        totalCandidates:
+          type: integer
+          example: 150
+        totalInterviews:
+          type: integer
+          example: 45
+        upcomingInterviews:
+          type: integer
+          example: 8
+        recentJobs:
+          type: integer
+          example: 5
+        recentCandidates:
+          type: integer
+          example: 12
+        lastUpdated:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:30:00Z"
+
+    Job:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        recruiter_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174001"
+        title:
+          type: string
+          example: "Senior Software Engineer"
+        description:
+          type: string
+          example: "We are looking for a senior software engineer..."
+        requirements:
+          type: array
+          items:
+            type: string
+          example: ["JavaScript", "React", "Node.js"]
+        location:
+          type: string
+          example: "San Francisco, CA"
+        salary:
+          type: string
+          example: "$120,000 - $150,000"
+        type:
+          type: string
+          enum: [full-time, part-time, contract, internship]
+          example: "full-time"
+        status:
+          type: string
+          enum: [active, inactive, draft]
+          example: "active"
+        created_at:
+          type: string
+          format: date-time
+          example: "2024-01-01T00:00:00Z"
+
+    Candidate:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        recruiter_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174001"
+        job_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174002"
+        name:
+          type: string
+          example: "John Doe"
+        email:
+          type: string
+          format: email
+          example: "john.doe@example.com"
+        phone:
+          type: string
+          example: "+1-555-0123"
+        status:
+          type: string
+          enum: [applied, reviewing, interviewed, hired, rejected]
+          example: "applied"
+        resume_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174003"
+        created_at:
+          type: string
+          format: date-time
+          example: "2024-01-01T00:00:00Z"
+
+    CandidateDetails:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/Candidate'
+        - type: object
+          properties:
+            resume:
+              $ref: '#/components/schemas/Resume'
+            interviews:
+              type: array
+              items:
+                $ref: '#/components/schemas/Interview'
+
+    Interview:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        recruiter_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174001"
+        candidate_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174002"
+        job_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174003"
+        scheduled_at:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:00:00Z"
+        duration:
+          type: integer
+          example: 60
+        type:
+          type: string
+          enum: [video, phone, onsite]
+          example: "video"
+        notes:
+          type: string
+          example: "Please prepare for technical questions"
+        status:
+          type: string
+          enum: [scheduled, completed, cancelled]
+          example: "scheduled"
+        created_at:
+          type: string
+          format: date-time
+          example: "2024-01-01T00:00:00Z"
+
+    Resume:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        user_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174001"
+        file_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174002"
+        parsed_content:
+          $ref: '#/components/schemas/ParsedResume'
+        created_at:
+          type: string
+          format: date-time
+          example: "2024-01-01T00:00:00Z"
+
+    ParsedResume:
+      type: object
+      properties:
+        extractedText:
+          type: string
+          example: "Sample extracted text from resume..."
+        sections:
+          type: object
+          properties:
+            contact:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: "John Doe"
+                email:
+                  type: string
+                  format: email
+                  example: "john.doe@email.com"
+                phone:
+                  type: string
+                  example: "+1-555-0123"
+            experience:
+              type: array
+              items:
+                type: object
+                properties:
+                  title:
+                    type: string
+                    example: "Software Engineer"
+                  company:
+                    type: string
+                    example: "Tech Corp"
+                  duration:
+                    type: string
+                    example: "2020-2023"
+                  description:
+                    type: string
+                    example: "Developed web applications using React and Node.js"
+            education:
+              type: array
+              items:
+                type: object
+                properties:
+                  degree:
+                    type: string
+                    example: "Bachelor of Science"
+                  institution:
+                    type: string
+                    example: "University of Technology"
+                  year:
+                    type: string
+                    example: "2020"
+            skills:
+              type: array
+              items:
+                type: string
+              example: ["JavaScript", "React", "Node.js", "Python"]
+
+    ResumeGenerationRequest:
+      type: object
+      required:
+        - resume
+        - jobDescription
+      properties:
+        resume:
+          type: string
+          minLength: 50
+          maxLength: 10000
+          example: "Current resume content..."
+        jobDescription:
+          type: string
+          minLength: 50
+          maxLength: 10000
+          example: "Job description for the position..."
+        preferences:
+          type: object
+          properties:
+            tone:
+              type: string
+              enum: [professional, friendly, confident, enthusiastic]
+              default: professional
+              example: "professional"
+            focus:
+              type: array
+              items:
+                type: string
+              example: ["technical skills", "leadership", "achievements"]
+
+    CoverLetterGenerationRequest:
+      type: object
+      required:
+        - resume
+        - jobDescription
+      properties:
+        resume:
+          type: string
+          minLength: 50
+          maxLength: 10000
+          example: "Current resume content..."
+        jobDescription:
+          type: string
+          minLength: 50
+          maxLength: 10000
+          example: "Job description for the position..."
+        preferences:
+          type: object
+          properties:
+            tone:
+              type: string
+              enum: [professional, friendly, confident, enthusiastic]
+              default: professional
+              example: "professional"
+            focus:
+              type: array
+              items:
+                type: string
+              example: ["experience", "motivation", "culture fit"]
+
+    GeneratedContent:
+      type: object
+      properties:
+        content:
+          type: string
+          example: "Generated resume or cover letter content..."
+        suggestions:
+          type: array
+          items:
+            type: string
+          example: ["Add more quantifiable achievements", "Include relevant keywords"]
+        metadata:
+          type: object
+          properties:
+            wordCount:
+              type: integer
+              example: 450
+            estimatedReadingTime:
+              type: integer
+              example: 2
+            keywords:
+              type: array
+              items:
+                type: string
+              example: ["JavaScript", "React", "Node.js"]
+
+    PdfExportRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          example: "Content to export as PDF..."
+        type:
+          type: string
+          enum: [resume, cover-letter, both]
+          default: resume
+          example: "resume"
+        format:
+          type: string
+          enum: [A4, letter]
+          default: A4
+          example: "A4"
+
+    ChatMessage:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        user_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174001"
+        role:
+          type: string
+          enum: [user, assistant]
+          example: "user"
+        content:
+          type: string
+          example: "How can I improve my resume?"
+        context:
+          type: string
+          enum: [general, resume, interview, job_search, recruiter]
+          example: "resume"
+        created_at:
+          type: string
+          format: date-time
+          example: "2024-01-01T00:00:00Z"
+
+    Company:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        name:
+          type: string
+          example: "Tech Corp"
+        description:
+          type: string
+          example: "A leading technology company"
+        website:
+          type: string
+          format: uri
+          example: "https://techcorp.com"
+        logo_url:
+          type: string
+          format: uri
+          example: "https://storage.example.com/logos/techcorp.png"
+        industry:
+          type: string
+          example: "Technology"
+        size:
+          type: string
+          enum: [startup, small, medium, large, enterprise]
+          example: "medium"
+        location:
+          type: string
+          example: "San Francisco, CA"
+        founded_year:
+          type: integer
+          example: 2020
+        is_verified:
+          type: boolean
+          example: false
+        created_at:
+          type: string
+          format: date-time
+          example: "2024-01-01T00:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2024-01-01T00:00:00Z"
+
+    CompanyUser:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174001"
+        email:
+          type: string
+          format: email
+          example: "john.doe@techcorp.com"
+        first_name:
+          type: string
+          example: "John"
+        last_name:
+          type: string
+          example: "Doe"
+        role:
+          type: string
+          enum: [recruiter, applicant, admin]
+          example: "recruiter"
+        company_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        created_at:
+          type: string
+          format: date-time
+          example: "2024-01-01T00:00:00Z"
+
+    File:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        user_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174001"
+        filename:
+          type: string
+          example: "resume.pdf"
+        file_path:
+          type: string
+          example: "user123/resumes/file123_resume.pdf"
+        file_url:
+          type: string
+          format: uri
+          example: "https://storage.example.com/resumes/user123/file123_resume.pdf"
+        file_size:
+          type: integer
+          example: 1024000
+        mime_type:
+          type: string
+          example: "application/pdf"
+        category:
+          type: string
+          enum: [general, resumes, avatars, documents]
+          example: "resumes"
+        bucket_name:
+          type: string
+          example: "resumes"
+        created_at:
+          type: string
+          format: date-time
+          example: "2024-01-01T00:00:00Z"
+
+    Pagination:
+      type: object
+      properties:
+        currentPage:
+          type: integer
+          example: 1
+        totalPages:
+          type: integer
+          example: 5
+        totalItems:
+          type: integer
+          example: 50
+        hasNextPage:
+          type: boolean
+          example: true
+        hasPrevPage:
+          type: boolean
+          example: false
+
+tags:
+  - name: System
+    description: System health and status endpoints
+  - name: Authentication
+    description: User authentication and authorization
+  - name: Dashboard
+    description: Recruiter dashboard and analytics
+  - name: Jobs
+    description: Job posting management
+  - name: Candidates
+    description: Candidate management and tracking
+  - name: Applicant Features
+    description: Features for job applicants
+  - name: Interviews
+    description: Interview scheduling and management
+  - name: Chat
+    description: AI chat assistant
+  - name: Files
+    description: File upload and management
+  - name: Companies
+    description: Company management and team features
+  - name: Analytics
+    description: System analytics and monitoring 
