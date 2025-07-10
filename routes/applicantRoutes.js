@@ -40,8 +40,8 @@ const applicantLimiter = rateLimit({
 router.use(applicantLimiter);
 
 // Resume management
-router.post('/resumes/upload', upload.single('resume'), uploadResume);
-router.post('/resumes/parse', validateResumeUpload, handleValidationErrors, parseResume);
+router.post('/resumes/upload', authenticateToken, upload.single('resume'), uploadResume);
+router.post('/resumes/parse', authenticateToken, validateResumeUpload, handleValidationErrors, parseResume);
 
 // Job analysis
 router.post('/ai/analyze-job', validateJobAnalysis, handleValidationErrors, analyzeJob);

@@ -333,4 +333,48 @@ exports.removeUserFromCompany = async (req, res, next) => {
     logger.error('Remove user from company error', { error: error.message });
     next(error);
   }
+};
+
+// Get public jobs (for applicants to browse)
+exports.getPublicJobs = async (req, res, next) => {
+  const { status, search, page = 1, limit = 10 } = req.query;
+
+  try {
+    logger.info('Getting public jobs', { filters: { status, search, page, limit } });
+
+    const filters = { status: status || 'active' };
+    if (search) filters.search = search;
+
+    const result = await db.getJobs(filters);
+    if (!result.success) {
+      throw new Error(result.error);
+    }
+
+    // Apply pagination
+    const startIndex = (page - 1) * limit;
+    const endIndex = page * limit;
+    const paginatedJobs = result.data.slice(startIndex, endIndex);
+
+    const response = {
+      jobs: paginatedJobs,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(result.data.length / limit),
+        totalJobs: result.data.length,
+        hasNextPage: endIndex < result.data.length,
+        hasPrevPage: page > 1
+      }
+    };
+
+    logger.info('Public jobs retrieved successfully', { count: paginatedJobs.length });
+
+    res.status(200).json({
+      success: true,
+      data: response
+    });
+
+  } catch (error) {
+    logger.error('Error getting public jobs', { error: error.message });
+    next(error);
+  }
 }; 

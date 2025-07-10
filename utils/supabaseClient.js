@@ -85,6 +85,22 @@ const db = {
     }
   },
 
+  async getUserByEmail(email) {
+    try {
+      const { data, error } = await supabase
+        .from(TABLES.USERS)
+        .select('*')
+        .eq('email', email)
+        .single();
+      
+      if (error) throw error;
+      return { success: true, data };
+    } catch (error) {
+      logger.error('Error getting user by email', { error: error.message });
+      return { success: false, error: error.message };
+    }
+  },
+
   async updateUser(userId, updates) {
     try {
       const { data, error } = await supabase
@@ -98,6 +114,26 @@ const db = {
       return { success: true, data };
     } catch (error) {
       logger.error('Error updating user', { error: error.message });
+      return { success: false, error: error.message };
+    }
+  },
+
+  async updateUserProfile(userData) {
+    try {
+      // Try to update existing user first, if not found, create new one
+      const { data, error } = await supabase
+        .from(TABLES.USERS)
+        .upsert([userData], { 
+          onConflict: 'id',
+          ignoreDuplicates: false 
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return { success: true, data };
+    } catch (error) {
+      logger.error('Error updating user profile', { error: error.message });
       return { success: false, error: error.message };
     }
   },
@@ -517,6 +553,82 @@ const db = {
     }
   },
 
+  async getUserFiles(userId, filters = {}) {
+    try {
+      let query = supabase
+        .from(TABLES.FILES)
+        .select('*')
+        .eq('user_id', userId);
+      
+      // Apply category filter if provided
+      if (filters.category) {
+        query = query.eq('category', filters.category);
+      }
+      
+      // Apply pagination
+      const page = parseInt(filters.page) || 1;
+      const limit = parseInt(filters.limit) || 20;
+      const offset = (page - 1) * limit;
+      
+      // Get total count for pagination
+      const countQuery = supabase
+        .from(TABLES.FILES)
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId);
+      
+      if (filters.category) {
+        countQuery.eq('category', filters.category);
+      }
+      
+      const { count, error: countError } = await countQuery;
+      if (countError) throw countError;
+      
+      // Get paginated results
+      const { data, error } = await query
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
+      
+      if (error) throw error;
+      
+      const totalPages = Math.ceil(count / limit);
+      
+      return { 
+        success: true, 
+        data: {
+          files: data,
+          pagination: {
+            currentPage: page,
+            totalPages: totalPages,
+            totalFiles: count,
+            hasNextPage: page < totalPages,
+            hasPrevPage: page > 1,
+            limit: limit
+          }
+        }
+      };
+    } catch (error) {
+      logger.error('Error getting user files', { error: error.message });
+      return { success: false, error: error.message };
+    }
+  },
+
+  async deleteFileById(fileId) {
+    try {
+      const { data, error } = await supabase
+        .from(TABLES.FILES)
+        .delete()
+        .eq('id', fileId)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return { success: true, data };
+    } catch (error) {
+      logger.error('Error deleting file record', { error: error.message });
+      return { success: false, error: error.message };
+    }
+  },
+
   // Pro signup operations
   async createProSignup(signupData) {
     try {
@@ -544,6 +656,19 @@ const storage = {
         .upload(filePath, fileBuffer, options);
       
       if (error) throw error;
+      
+      // Make the file public after upload
+      const { error: updateError } = await supabase.storage
+        .from(bucketName)
+        .update(filePath, fileBuffer, {
+          ...options,
+          upsert: true
+        });
+      
+      if (updateError) {
+        logger.warn('Failed to make file public', { error: updateError.message });
+      }
+      
       return { success: true, data };
     } catch (error) {
       logger.error('Error uploading file', { error: error.message });
@@ -553,11 +678,27 @@ const storage = {
 
   async getFileUrl(bucketName, filePath) {
     try {
+      // First try to get public URL
       const { data } = supabase.storage
         .from(bucketName)
         .getPublicUrl(filePath);
       
-      return { success: true, data: data.publicUrl };
+      // Test if the public URL is accessible
+      try {
+        const response = await fetch(data.publicUrl, { method: 'HEAD' });
+        if (response.ok) {
+          return { success: true, data: data.publicUrl };
+        }
+      } catch (fetchError) {
+        logger.warn('Public URL not accessible, file may be private', { 
+          error: fetchError.message,
+          bucketName,
+          filePath 
+        });
+      }
+      
+      // If public URL doesn't work, return null (we'll use direct download)
+      return { success: true, data: null };
     } catch (error) {
       logger.error('Error getting file URL', { error: error.message });
       return { success: false, error: error.message };

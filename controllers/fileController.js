@@ -61,6 +61,13 @@ exports.uploadFile = async (req, res, next) => {
     }
 
     // Upload file to Supabase Storage
+    logger.info('Uploading file to storage', { 
+      bucketName, 
+      filePath, 
+      fileSize: file.size,
+      mimeType: file.mimetype 
+    });
+    
     const uploadResult = await storage.uploadFile(
       bucketName,
       filePath,
@@ -72,13 +79,29 @@ exports.uploadFile = async (req, res, next) => {
     );
 
     if (!uploadResult.success) {
-      throw new Error(uploadResult.error);
+      logger.error('File upload to storage failed', { 
+        error: uploadResult.error,
+        bucketName,
+        filePath 
+      });
+      throw new Error(`Failed to upload file to storage: ${uploadResult.error}`);
     }
+    
+    logger.info('File uploaded to storage successfully', { 
+      bucketName, 
+      filePath,
+      fileSize: file.size 
+    });
 
     // Get public URL
     const urlResult = await storage.getFileUrl(bucketName, filePath);
     if (!urlResult.success) {
-      throw new Error(urlResult.error);
+      logger.warn('Failed to get public URL, but continuing with upload', { 
+        error: urlResult.error, 
+        bucketName, 
+        filePath 
+      });
+      // Continue without URL - we can still access the file via download
     }
 
     // Create file record in database
@@ -87,7 +110,7 @@ exports.uploadFile = async (req, res, next) => {
       user_id: userId,
       filename: file.originalname,
       file_path: filePath,
-      file_url: urlResult.data,
+      file_url: urlResult.success ? urlResult.data : null,
       file_size: file.size,
       mime_type: file.mimetype,
       category: category,
@@ -249,8 +272,11 @@ exports.deleteFile = async (req, res, next) => {
     }
 
     // Delete file record from database
-    // Note: This would require a deleteFile method in the database operations
-    // For now, we'll just return success
+    const dbDeleteResult = await db.deleteFileById(fileId);
+    if (!dbDeleteResult.success) {
+      logger.error('Failed to delete file record from database', { error: dbDeleteResult.error });
+      throw new Error(`Failed to delete file record: ${dbDeleteResult.error}`);
+    }
 
     logger.info('File deleted successfully', { fileId, userId });
 
@@ -280,38 +306,199 @@ exports.getUserFiles = async (req, res, next) => {
       throw new ValidationError('User not authenticated');
     }
 
-    // This would require a getUserFiles method in the database operations
-    // For now, we'll return a placeholder response
-    const files = [
-      {
-        id: 'sample-file-id',
-        filename: 'sample-resume.pdf',
-        fileUrl: 'https://example.com/sample-file.pdf',
-        fileSize: 1024000,
-        category: 'resumes',
-        mimeType: 'application/pdf',
-        createdAt: new Date().toISOString()
-      }
-    ];
+    // Get user files from database
+    const filters = { category, page, limit };
+    const result = await db.getUserFiles(userId, filters);
+    
+    if (!result.success) {
+      throw new Error(result.error);
+    }
 
-    logger.info('User files retrieved successfully', { userId, count: files.length });
+    // Transform the data to match the expected format
+    const transformedFiles = result.data.files.map(file => ({
+      id: file.id,
+      filename: file.filename,
+      fileUrl: file.file_url,
+      fileSize: file.file_size,
+      category: file.category,
+      mimeType: file.mime_type,
+      createdAt: file.created_at
+    }));
+
+    logger.info('User files retrieved successfully', { 
+      userId, 
+      count: result.data.files.length,
+      totalFiles: result.data.pagination.totalFiles
+    });
 
     res.status(200).json({
       success: true,
       data: {
-        files: files,
-        pagination: {
-          currentPage: parseInt(page),
-          totalPages: 1,
-          totalFiles: files.length,
-          hasNextPage: false,
-          hasPrevPage: false
-        }
+        files: transformedFiles,
+        pagination: result.data.pagination
       }
     });
 
   } catch (error) {
     logger.error('Error getting user files', { error: error.message });
+    next(error);
+  }
+};
+
+// Debug file status (development only)
+exports.debugFileStatus = async (req, res, next) => {
+  const userId = req.user?.id;
+  const fileId = req.params.fileId;
+
+  try {
+    logger.info('Debug file status', { fileId, userId });
+
+    if (!userId) {
+      throw new ValidationError('User not authenticated');
+    }
+
+    if (!fileId) {
+      throw new ValidationError('File ID is required');
+    }
+
+    // Get file record
+    const fileResult = await db.getFileById(fileId);
+    if (!fileResult.success || !fileResult.data) {
+      throw new ValidationError('File not found');
+    }
+
+    if (fileResult.data.user_id !== userId) {
+      throw new ValidationError('Access denied');
+    }
+
+    // Check if file exists in storage
+    const { supabase } = require('../utils/supabaseClient');
+    const { data: fileList, error: listError } = await supabase.storage
+      .from(fileResult.data.bucket_name)
+      .list(fileResult.data.file_path.split('/').slice(0, -1).join('/'));
+
+    // Try to download a small portion to test access
+    const { data: testDownload, error: downloadError } = await supabase.storage
+      .from(fileResult.data.bucket_name)
+      .download(fileResult.data.file_path);
+
+    const debugInfo = {
+      fileRecord: {
+        id: fileResult.data.id,
+        filename: fileResult.data.filename,
+        file_path: fileResult.data.file_path,
+        file_url: fileResult.data.file_url,
+        file_size: fileResult.data.file_size,
+        bucket_name: fileResult.data.bucket_name,
+        category: fileResult.data.category,
+        created_at: fileResult.data.created_at
+      },
+      storageStatus: {
+        bucketExists: !listError,
+        fileExists: testDownload && testDownload.length > 0,
+        downloadError: downloadError ? downloadError.message : null,
+        listError: listError ? listError.message : null,
+        testDownloadSize: testDownload ? testDownload.length : 0
+      },
+      environment: {
+        nodeEnv: process.env.NODE_ENV,
+        supabaseUrl: process.env.SUPABASE_URL ? 'Set' : 'Not set',
+        supabaseAnonKey: process.env.SUPABASE_ANON_KEY ? 'Set' : 'Not set'
+      }
+    };
+
+    logger.info('Debug file status completed', { fileId, debugInfo });
+
+    res.status(200).json({
+      success: true,
+      data: debugInfo
+    });
+
+  } catch (error) {
+    logger.error('Error debugging file status', { error: error.message });
+    next(error);
+  }
+};
+
+// Test upload function (development only)
+exports.testUpload = async (req, res, next) => {
+  const userId = req.user?.id;
+  const { category = 'resumes' } = req.body;
+
+  try {
+    logger.info('Test upload attempt', { userId, category });
+
+    if (!userId) {
+      throw new ValidationError('User not authenticated');
+    }
+
+    if (!req.file) {
+      throw new ValidationError('No file uploaded');
+    }
+
+    const file = req.file;
+    const fileId = uuidv4();
+    const filePath = `${userId}/${category}/${fileId}_${file.originalname}`;
+
+    logger.info('Test upload details', { 
+      fileId, 
+      filePath, 
+      fileSize: file.size,
+      mimeType: file.mimetype,
+      originalName: file.originalname 
+    });
+
+    // Test storage upload step by step
+    const { supabase } = require('../utils/supabaseClient');
+    
+    // Step 1: Test bucket access
+    const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
+    logger.info('Available buckets', { buckets: buckets?.map(b => b.name), error: bucketError?.message });
+    
+    // Step 2: Test file upload
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('resumes')
+      .upload(filePath, file.buffer, {
+        contentType: file.mimetype,
+        upsert: false
+      });
+    
+    logger.info('Upload result', { 
+      success: !uploadError, 
+      error: uploadError?.message,
+      data: uploadData 
+    });
+
+    if (uploadError) {
+      throw new Error(`Upload failed: ${uploadError.message}`);
+    }
+
+    // Step 3: Test file download
+    const { data: downloadData, error: downloadError } = await supabase.storage
+      .from('resumes')
+      .download(filePath);
+    
+    logger.info('Download test result', { 
+      success: !downloadError, 
+      error: downloadError?.message,
+      downloadSize: downloadData?.length 
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        message: 'Test upload completed successfully',
+        fileId,
+        filePath,
+        uploadSuccess: !uploadError,
+        downloadSuccess: !downloadError,
+        fileSize: file.size,
+        downloadSize: downloadData?.length || 0
+      }
+    });
+
+  } catch (error) {
+    logger.error('Test upload failed', { error: error.message });
     next(error);
   }
 };

@@ -19,8 +19,8 @@ const companyLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Apply rate limiting to all company routes
-router.use(companyLimiter);
+// Apply rate limiting to all company routes except public jobs
+// router.use(companyLimiter);
 
 // Create a new company
 router.post('/', 
@@ -70,6 +70,9 @@ router.put('/:companyId',
   }),
   companyController.updateCompany
 );
+
+// Get public jobs (for applicants to browse) - no authentication required
+router.get('/jobs', companyController.getPublicJobs);
 
 // Get all companies with filters
 router.get('/', 

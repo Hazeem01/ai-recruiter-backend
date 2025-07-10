@@ -21,6 +21,10 @@ class AIProvider {
     return await this.openaiProvider.analyzeJob(jobDescription);
   }
 
+  async parseResume(resumeText) {
+    return await this.openaiProvider.parseResume(resumeText);
+  }
+
   async chat(message, context = 'general') {
     return await this.openaiProvider.chat(message, context);
   }

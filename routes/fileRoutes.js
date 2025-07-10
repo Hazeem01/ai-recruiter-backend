@@ -7,7 +7,8 @@ const {
   downloadFile,
   deleteFile,
   getUserFiles,
-  upload
+  upload,
+  debugFileStatus
 } = require('../controllers/fileController');
 const { 
   validateFileUpload, 
@@ -38,5 +39,11 @@ router.get('/:id', authenticateToken, getFile);
 router.get('/:id/download', authenticateToken, downloadFile);
 router.delete('/:id', authenticateToken, deleteFile);
 router.get('/user/files', authenticateToken, getUserFiles);
+
+// Debug endpoint (development only)
+if (process.env.NODE_ENV === 'development') {
+  router.get('/debug/:fileId', authenticateToken, debugFileStatus);
+  router.post('/test-upload', authenticateToken, upload.single('file'), require('../controllers/fileController').testUpload);
+}
 
 module.exports = router; 

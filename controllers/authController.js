@@ -27,8 +27,8 @@ exports.register = async (req, res, next) => {
       throw new ValidationError('Missing required fields: email, password, firstName, lastName');
     }
 
-    // Check if user already exists
-    const existingUser = await db.getUserById(email);
+    // Check if user already exists by email
+    const existingUser = await db.getUserByEmail(email);
     if (existingUser.success && existingUser.data) {
       throw new ValidationError('User with this email already exists');
     }
@@ -38,6 +38,13 @@ exports.register = async (req, res, next) => {
       first_name: firstName,
       last_name: lastName,
       role: role
+    });
+
+    logger.info('Supabase Auth signup result', { 
+      success: authResult.success, 
+      hasUser: !!authResult.data?.user,
+      userId: authResult.data?.user?.id,
+      error: authResult.error 
     });
 
     if (!authResult.success) {
@@ -81,7 +88,7 @@ exports.register = async (req, res, next) => {
       }
     }
 
-    // Create user profile in database
+    // Update user profile in database (Supabase Auth already created the user)
     const userData = {
       id: authResult.data.user.id, // Use Supabase Auth user ID
       email: email,
@@ -92,7 +99,13 @@ exports.register = async (req, res, next) => {
       created_at: new Date().toISOString()
     };
 
-    const dbResult = await db.createUser(userData);
+    const dbResult = await db.updateUserProfile(userData);
+    logger.info('Database user profile update result', { 
+      success: dbResult.success, 
+      error: dbResult.error,
+      userId: userData.id 
+    });
+    
     if (!dbResult.success) {
       throw new Error(dbResult.error);
     }

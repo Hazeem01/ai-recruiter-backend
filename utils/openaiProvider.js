@@ -132,6 +132,101 @@ Provide a comprehensive analysis including key skills, experience level, industr
     return await this.generateContent(prompt, { systemPrompt, maxTokens: 1500 });
   }
 
+  async parseResume(resumeText) {
+    const systemPrompt = `You are an expert resume parser. Extract and structure information from resume text into a standardized format.
+
+Please parse the resume and return a JSON object with the following structure:
+{
+  "extractedText": "The full extracted text from the resume",
+  "sections": {
+    "contact": {
+      "name": "Full name",
+      "email": "Email address",
+      "phone": "Phone number",
+      "location": "City, State/Country",
+      "linkedin": "LinkedIn URL (if found)"
+    },
+    "summary": "Professional summary or objective",
+    "experience": [
+      {
+        "title": "Job title",
+        "company": "Company name",
+        "duration": "Duration (e.g., 2020-2023)",
+        "location": "Location (if mentioned)",
+        "description": "Job description and achievements"
+      }
+    ],
+    "education": [
+      {
+        "degree": "Degree name",
+        "institution": "Institution name",
+        "year": "Graduation year",
+        "gpa": "GPA (if mentioned)"
+      }
+    ],
+    "skills": ["Skill 1", "Skill 2", "Skill 3"],
+    "certifications": ["Certification 1", "Certification 2"],
+    "languages": ["Language 1", "Language 2"],
+    "projects": [
+      {
+        "name": "Project name",
+        "description": "Project description",
+        "technologies": ["Tech 1", "Tech 2"],
+        "url": "Project URL (if mentioned)"
+      }
+    ]
+  }
+}
+
+Guidelines:
+- Extract all available information accurately
+- If a section is not found, omit it from the JSON
+- For skills, extract both technical and soft skills
+- For experience, include all relevant details like duration, location, achievements
+- Clean and format the text appropriately
+- Return valid JSON only`;
+
+    const prompt = `Please parse this resume text and extract structured information:
+
+${resumeText}
+
+Return the parsed information in the specified JSON format.`;
+
+    const result = await this.generateContent(prompt, { 
+      systemPrompt, 
+      maxTokens: 4000,
+      temperature: 0.1 // Lower temperature for more consistent parsing
+    });
+
+    if (!result.success) {
+      return result;
+    }
+
+    try {
+      // Try to parse the JSON response
+      const parsedData = JSON.parse(result.data.content);
+      return {
+        success: true,
+        data: parsedData
+      };
+    } catch (parseError) {
+      logger.error('Error parsing AI response as JSON', { error: parseError.message });
+      // Fallback: return the raw text if JSON parsing fails
+      return {
+        success: true,
+        data: {
+          extractedText: resumeText,
+          sections: {
+            contact: {},
+            experience: [],
+            education: [],
+            skills: []
+          }
+        }
+      };
+    }
+  }
+
   async chat(message, context = 'general') {
     const systemPrompt = `You are an AI assistant for a recruitment platform. You help users with job-related questions, resume advice, and career guidance. 
 

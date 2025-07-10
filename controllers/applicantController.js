@@ -5,6 +5,7 @@ const cheerio = require('cheerio');
 const { db, storage, BUCKETS } = require('../utils/supabaseClient');
 const logger = require('../utils/logger');
 const { ValidationError } = require('../middleware/errorHandler');
+const { log } = require('winston');
 
 // Configure multer for file uploads
 const upload = multer({
@@ -53,6 +54,7 @@ exports.uploadResume = async (req, res, next) => {
     );
 
     if (!uploadResult.success) {
+      logger.error('Supabase storage upload error', { error: uploadResult.error });
       throw new Error(uploadResult.error);
     }
 
@@ -67,10 +69,12 @@ exports.uploadResume = async (req, res, next) => {
       id: fileId,
       user_id: userId,
       filename: file.originalname,
+      original_name: file.originalname,
       file_path: filePath,
-      file_url: urlResult.data,
       file_size: file.size,
+      file_url: urlResult.data,
       mime_type: file.mimetype,
+      bucket_name: BUCKETS.RESUMES,
       created_at: new Date().toISOString()
     };
 
@@ -123,40 +127,156 @@ exports.parseResume = async (req, res, next) => {
       throw new ValidationError('Access denied');
     }
 
-    // For now, return a placeholder parsed content
-    // In a real implementation, you would use OCR or text extraction libraries
-    const parsedContent = {
-      extractedText: "Sample extracted text from resume...",
-      sections: {
-        contact: {
-          name: "John Doe",
-          email: "john.doe@email.com",
-          phone: "+1-555-0123"
-        },
-        experience: [
-          {
-            title: "Software Engineer",
-            company: "Tech Corp",
-            duration: "2020-2023",
-            description: "Developed web applications using React and Node.js"
+    // Download and parse the file content
+    const axios = require('axios');
+    const fs = require('fs');
+    const path = require('path');
+    const pdfParse = require('pdf-parse');
+    const mammoth = require('mammoth');
+    const { supabase } = require('../utils/supabaseClient');
+    
+    let extractedText = '';
+    
+    try {
+          // Check if file exists and has valid data
+    if (!fileResult.data.file_path || !fileResult.data.bucket_name) {
+      throw new Error('File path or bucket information is missing');
+    }
+    
+    logger.info('Downloading file from storage', { 
+      bucket: fileResult.data.bucket_name, 
+      path: fileResult.data.file_path,
+      fileSize: fileResult.data.file_size,
+      hasPublicUrl: !!fileResult.data.file_url
+    });
+    
+    // Download the file from Supabase storage (works for both public and private files)
+    const { data: fileBuffer, error: downloadError } = await supabase.storage
+      .from(fileResult.data.bucket_name)
+      .download(fileResult.data.file_path);
+    
+    if (downloadError) {
+      logger.error('Download failed', { 
+        error: downloadError.message,
+        bucket: fileResult.data.bucket_name,
+        path: fileResult.data.file_path
+      });
+      throw new Error(`Failed to download file: ${downloadError.message}`);
+    }
+    
+    if (!fileBuffer || fileBuffer.length === 0) {
+      throw new Error('Downloaded file is empty');
+    }
+    
+    logger.info('File downloaded successfully', { 
+      size: fileBuffer.length,
+      expectedSize: fileResult.data.file_size,
+      filename: fileResult.data.filename,
+      bufferType: typeof fileBuffer,
+      isArrayBuffer: fileBuffer instanceof ArrayBuffer,
+      isUint8Array: fileBuffer instanceof Uint8Array
+    });
+      
+      const fileExtension = path.extname(fileResult.data.filename).toLowerCase();
+      
+      // Extract text based on file type
+      if (fileExtension === '.pdf') {
+        try {
+          // Write buffer to temporary file and read it
+          const fs = require('fs');
+          const os = require('os');
+          const tempFile = `${os.tmpdir()}/temp_${Date.now()}.pdf`;
+          
+          try {
+            // Convert Blob to Buffer if needed
+            let bufferToWrite = fileBuffer;
+            if (fileBuffer instanceof Blob) {
+              const arrayBuffer = await fileBuffer.arrayBuffer();
+              bufferToWrite = Buffer.from(arrayBuffer);
+            }
+            
+            fs.writeFileSync(tempFile, bufferToWrite);
+            logger.info('Temporary file created', { tempFile, size: bufferToWrite.length });
+            
+            const data = await pdfParse(fs.readFileSync(tempFile));
+            
+            if (!data || !data.text) {
+              throw new Error('No content found in PDF');
+            }
+            
+            extractedText = data.text;
+            
+            logger.info('PDF text extraction completed', { 
+              pages: data.numpages,
+              textLength: extractedText.length 
+            });
+          } finally {
+            // Clean up temporary file
+            try {
+              fs.unlinkSync(tempFile);
+              logger.info('Temporary file cleaned up');
+            } catch (cleanupError) {
+              logger.warn('Failed to clean up temporary file', { error: cleanupError.message });
+            }
           }
-        ],
-        education: [
-          {
-            degree: "Bachelor of Science",
-            institution: "University of Technology",
-            year: "2020"
-          }
-        ],
-        skills: ["JavaScript", "React", "Node.js", "Python"]
+        } catch (pdfError) {
+          logger.error('PDF extraction failed', { error: pdfError.message });
+          throw new Error(`PDF extraction failed: ${pdfError.message}`);
+        }
+      } else if (fileExtension === '.docx') {
+        try {
+          const result = await mammoth.extractRawText({ buffer: fileBuffer });
+          extractedText = result.value;
+          logger.info('DOCX text extraction completed', { textLength: extractedText.length });
+        } catch (docxError) {
+          logger.error('DOCX extraction failed', { error: docxError.message });
+          throw new Error(`DOCX extraction failed: ${docxError.message}`);
+        }
+      } else if (fileExtension === '.doc') {
+        try {
+          const result = await mammoth.extractRawText({ buffer: fileBuffer });
+          extractedText = result.value;
+          logger.info('DOC text extraction completed', { textLength: extractedText.length });
+        } catch (docError) {
+          logger.error('DOC extraction failed', { error: docError.message });
+          throw new Error(`DOC extraction failed: ${docError.message}`);
+        }
+      } else if (fileExtension === '.txt') {
+        extractedText = fileBuffer.toString('utf-8');
+        logger.info('TXT text extraction completed', { textLength: extractedText.length });
+      } else {
+        throw new Error(`Unsupported file type: ${fileExtension}`);
       }
-    };
+      
+      // Clean up the extracted text
+      extractedText = extractedText.replace(/\s+/g, ' ').trim();
+      
+      if (!extractedText || extractedText.length < 50) {
+        throw new Error('Could not extract meaningful text from the file');
+      }
+      
+    } catch (extractionError) {
+      logger.error('Error extracting text from file', { error: extractionError.message });
+      throw new Error(`Failed to extract text from file: ${extractionError.message}`);
+    }
+    
+    // Use AI to parse and structure the resume content
+    const aiProvider = require('../utils/aiProvider');
+    const parseResult = await aiProvider.parseResume(extractedText);
+    
+    if (!parseResult.success) {
+      throw new Error(parseResult.error);
+    }
+    
+    const parsedContent = parseResult.data;
 
     // Create resume record
     const resumeData = {
       user_id: userId,
-      file_id: fileId,
-      parsed_content: parsedContent,
+      title: fileResult.data.filename || 'Resume',
+      content: JSON.stringify(parsedContent),
+      original_file_url: fileResult.data.file_url,
+      is_generated: false,
       created_at: new Date().toISOString()
     };
 
