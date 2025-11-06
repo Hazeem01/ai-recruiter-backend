@@ -24,7 +24,7 @@
   "license": "ISC",
   "description": "AI-powered recruitment platform with two-sided marketplace (Recruiters & Job Applicants)",
   "dependencies": {
-    "@supabase/supabase-js": "^2.50.3",
+    "aws-sdk": "^2.1691.0",
     "axios": "^1.6.0",
     "bcryptjs": "^2.4.3",
     "cheerio": "^1.1.0",
@@ -42,6 +42,7 @@
     "pdf.js-extract": "^0.2.1",
     "pdf2pic": "^3.2.0",
     "pdfkit": "^0.15.0",
+    "pg": "^8.12.0",
     "playwright": "^1.53.2",
     "swagger-ui-express": "^4.6.3",
     "uuid": "^9.0.1",

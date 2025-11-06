@@ -32,26 +32,7 @@ CREATE INDEX IF NOT EXISTS idx_companies_industry ON companies(industry);
 -- Create trigger for companies updated_at
 CREATE TRIGGER update_companies_updated_at BEFORE UPDATE ON companies FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Add RLS (Row Level Security) policies for companies
-ALTER TABLE companies ENABLE ROW LEVEL SECURITY;
-
--- Policy: Users can view companies
-CREATE POLICY "Users can view companies" ON companies
-    FOR SELECT USING (true);
-
--- Policy: Company members can update their company
-CREATE POLICY "Company members can update company" ON companies
-    FOR UPDATE USING (
-        EXISTS (
-            SELECT 1 FROM users 
-            WHERE users.company_id = companies.id 
-            AND users.id = auth.uid()
-        )
-    );
-
--- Policy: Only authenticated users can create companies
-CREATE POLICY "Authenticated users can create companies" ON companies
-    FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+-- Note: RLS (Row Level Security) removed - authorization handled in application code
 
 -- Update jobs table to use company_id instead of company VARCHAR
 -- This is a data migration that should be run after the schema is updated

@@ -1,11 +1,8 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const { supabase } = require('../utils/supabaseClient');
+const { pool } = require('../utils/databaseClient');
 const logger = require('../utils/logger');
-const dotenv = require("dotenv");
-
-dotenv.config();
 
 class MigrationRunner {
   constructor() {
@@ -30,9 +27,71 @@ class MigrationRunner {
       }
 
       logger.info(`Loaded ${this.migrations.length} migrations`);
+      return this.migrations;
     } catch (error) {
       logger.error('Error loading migrations:', error);
       throw error;
+    }
+  }
+
+  async createMigrationsTable() {
+    const client = await pool.connect();
+    try {
+      // Create migrations table if it doesn't exist
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS migrations (
+          id SERIAL PRIMARY KEY,
+          name VARCHAR(255) UNIQUE NOT NULL,
+          executed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+      `);
+      logger.info('Migrations table ready');
+    } catch (error) {
+      logger.error('Error creating migrations table:', error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getExecutedMigrations() {
+    const client = await pool.connect();
+    try {
+      const result = await client.query('SELECT name FROM migrations ORDER BY executed_at');
+      return result.rows.map(row => row.name);
+    } catch (error) {
+      logger.error('Error getting executed migrations:', error);
+      return [];
+    } finally {
+      client.release();
+    }
+  }
+
+  async runMigration(migration) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      // Execute the entire SQL file as one block
+      // PostgreSQL can handle multiple statements in a single query
+      await client.query(migration.sql);
+
+      // Record migration
+      await client.query(
+        'INSERT INTO migrations (name) VALUES ($1) ON CONFLICT (name) DO NOTHING',
+        [migration.name]
+      );
+
+      await client.query('COMMIT');
+      logger.info(`✅ Migration ${migration.name} executed successfully`);
+      return true;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      logger.error(`❌ Error running migration ${migration.name}:`, error.message);
+      logger.error(`   Error details:`, error);
+      throw error;
+    } finally {
+      client.release();
     }
   }
 
@@ -40,68 +99,89 @@ class MigrationRunner {
     try {
       logger.info('Starting database migrations...');
 
-      for (const migration of this.migrations) {
-        logger.info(`Running migration: ${migration.name}`);
-        
-        const { error } = await supabase.rpc('exec_sql', {
-          sql: migration.sql
-        });
+      // Create migrations table
+      await this.createMigrationsTable();
 
-        if (error) {
-          logger.error(`Migration failed: ${migration.name}`, error);
-          throw new Error(`Migration ${migration.name} failed: ${error.message}`);
-        }
+      // Load migrations
+      await this.loadMigrations();
 
-        logger.info(`Migration completed: ${migration.name}`);
+      // Get already executed migrations
+      const executed = await this.getExecutedMigrations();
+      logger.info(`Found ${executed.length} already executed migrations`);
+
+      // Filter out already executed migrations
+      const pendingMigrations = this.migrations.filter(
+        m => !executed.includes(m.name)
+      );
+
+      if (pendingMigrations.length === 0) {
+        logger.info('✅ No pending migrations. Database is up to date!');
+        return;
       }
 
-      logger.info('All migrations completed successfully');
+      logger.info(`Found ${pendingMigrations.length} pending migration(s)`);
+
+      // Run pending migrations
+      for (const migration of pendingMigrations) {
+        logger.info(`Running migration: ${migration.name}`);
+        await this.runMigration(migration);
+      }
+
+      logger.info('✅ All migrations completed successfully!');
     } catch (error) {
-      logger.error('Migration runner failed:', error);
+      logger.error('Migration failed:', error);
       throw error;
     }
   }
 
-  async createMigrationsTable() {
-    const createTableSQL = `
-      CREATE TABLE IF NOT EXISTS migrations (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(255) NOT NULL UNIQUE,
-        executed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-      );
-    `;
-
+  async reset() {
     try {
-      const { error } = await supabase.rpc('exec_sql', {
-        sql: createTableSQL
-      });
+      logger.warn('⚠️  Resetting database - this will drop all tables!');
+      
+      const client = await pool.connect();
+      try {
+        // Get all tables
+        const tablesResult = await client.query(`
+          SELECT tablename 
+          FROM pg_tables 
+          WHERE schemaname = 'public'
+        `);
 
-      if (error) {
-        logger.error('Failed to create migrations table:', error);
-        throw error;
+        const tables = tablesResult.rows.map(row => row.tablename);
+
+        // Drop all tables (including migrations)
+        for (const table of tables) {
+          await client.query(`DROP TABLE IF EXISTS ${table} CASCADE`);
+          logger.info(`Dropped table: ${table}`);
+        }
+
+        logger.info('✅ Database reset completed');
+      } finally {
+        client.release();
       }
-
-      logger.info('Migrations table created/verified');
     } catch (error) {
-      logger.error('Error creating migrations table:', error);
+      logger.error('Error resetting database:', error);
       throw error;
     }
   }
 }
 
+// CLI interface
 async function main() {
+  const args = process.argv.slice(2);
   const runner = new MigrationRunner();
-  
+
   try {
-    await runner.loadMigrations();
-    await runner.createMigrationsTable();
+    if (args.includes('--reset')) {
+      await runner.reset();
+    }
+
     await runner.runMigrations();
-    
-    logger.info('Database migration completed successfully');
-    process.exit(0);
   } catch (error) {
-    logger.error('Migration failed:', error);
+    console.error('Migration error:', error.message);
     process.exit(1);
+  } finally {
+    await pool.end();
   }
 }
 
@@ -109,4 +189,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = MigrationRunner; 
+module.exports = MigrationRunner;

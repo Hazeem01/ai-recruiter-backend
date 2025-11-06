@@ -1,12 +1,11 @@
 const jwt = require('jsonwebtoken');
-const { auth, db } = require('../utils/supabaseClient');
+const bcrypt = require('bcryptjs');
+const { db } = require('../utils/dbClient');
 const logger = require('../utils/logger');
 const { ValidationError } = require('../middleware/errorHandler');
 
-// JWT secret (in production, use environment variable)
 const JWT_SECRET = process.env.JWT_SECRET;
 
-// Generate JWT token
 const generateToken = (userId, role) => {
   return jwt.sign(
     { userId, role },
@@ -15,7 +14,6 @@ const generateToken = (userId, role) => {
   );
 };
 
-// User registration
 exports.register = async (req, res, next) => {
   const { email, password, firstName, lastName, role = 'applicant', company } = req.body;
 
@@ -27,29 +25,13 @@ exports.register = async (req, res, next) => {
       throw new ValidationError('Missing required fields: email, password, firstName, lastName');
     }
 
-    // Check if user already exists by email
     const existingUser = await db.getUserByEmail(email);
     if (existingUser.success && existingUser.data) {
       throw new ValidationError('User with this email already exists');
     }
 
-    // Create user in Supabase Auth
-    const authResult = await auth.signUp(email, password, {
-      first_name: firstName,
-      last_name: lastName,
-      role: role
-    });
-
-    logger.info('Supabase Auth signup result', { 
-      success: authResult.success, 
-      hasUser: !!authResult.data?.user,
-      userId: authResult.data?.user?.id,
-      error: authResult.error 
-    });
-
-    if (!authResult.success) {
-      throw new Error(authResult.error);
-    }
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
 
     // Handle company creation for recruiters
     let companyId = null;
@@ -88,22 +70,21 @@ exports.register = async (req, res, next) => {
       }
     }
 
-    // Update user profile in database (Supabase Auth already created the user)
+    // Create user in database with hashed password
     const userData = {
-      id: authResult.data.user.id, // Use Supabase Auth user ID
       email: email,
       first_name: firstName,
       last_name: lastName,
       role: role,
       company_id: companyId,
-      created_at: new Date().toISOString()
+      password_hash: hashedPassword // Store hashed password
     };
 
-    const dbResult = await db.updateUserProfile(userData);
-    logger.info('Database user profile update result', { 
+    const dbResult = await db.createUser(userData);
+    logger.info('Database user creation result', { 
       success: dbResult.success, 
       error: dbResult.error,
-      userId: userData.id 
+      userId: dbResult.data?.id 
     });
     
     if (!dbResult.success) {
@@ -111,15 +92,15 @@ exports.register = async (req, res, next) => {
     }
 
     // Generate JWT token
-    const token = generateToken(authResult.data.user.id, role);
+    const token = generateToken(dbResult.data.id, role);
 
-    logger.info('User registered successfully', { userId: authResult.data.user.id, role, companyId });
+    logger.info('User registered successfully', { userId: dbResult.data.id, role, companyId });
 
     res.status(201).json({
       success: true,
       data: {
         user: {
-          id: authResult.data.user.id,
+          id: dbResult.data.id,
           email: email,
           firstName: firstName,
           lastName: lastName,
@@ -148,33 +129,51 @@ exports.login = async (req, res, next) => {
       throw new ValidationError('Email and password are required');
     }
 
-    // Sign in with Supabase Auth
-    const authResult = await auth.signIn(email, password);
-    if (!authResult.success) {
+    // Get user from database (include password_hash for verification)
+    const userResult = await db.getUserByEmail(email, true);
+    if (!userResult.success || !userResult.data) {
       throw new ValidationError('Invalid email or password');
     }
 
-    // Get user profile from database
-    const userResult = await db.getUserById(authResult.data.user.id);
-    if (!userResult.success) {
-      throw new Error('User profile not found');
+    const user = userResult.data;
+
+    // Check if user needs to set/reset password (migrated from Supabase)
+    if (!user.password_hash) {
+      logger.warn('User has no password hash - needs password reset', { userId: user.id, email });
+      return res.status(403).json({
+        success: false,
+        error: {
+          message: 'Password reset required',
+          code: 'PASSWORD_RESET_REQUIRED',
+          details: 'Your account was migrated from our previous system. Please reset your password to continue.'
+        },
+        data: {
+          requiresPasswordReset: true,
+          email: user.email
+        }
+      });
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+    if (!isPasswordValid) {
+      throw new ValidationError('Invalid email or password');
     }
 
     // Generate JWT token
-    const token = generateToken(authResult.data.user.id, userResult.data.role);
+    const token = generateToken(user.id, user.role);
 
-    logger.info('User logged in successfully', { userId: authResult.data.user.id });
+    logger.info('User logged in successfully', { userId: user.id });
 
     res.status(200).json({
       success: true,
       data: {
         user: {
-          id: authResult.data.user.id,
-          email: userResult.data.email,
-          firstName: userResult.data.first_name,
-          lastName: userResult.data.last_name,
-          role: userResult.data.role,
-          companyId: userResult.data.company_id
+          id: user.id,
+          email: user.email,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          role: user.role,
+          companyId: user.company_id
         },
         token: token
       }
@@ -191,11 +190,9 @@ exports.logout = async (req, res, next) => {
   try {
     logger.info('User logout attempt', { userId: req.user?.id });
 
-    // Sign out from Supabase Auth
-    const authResult = await auth.signOut();
-    if (!authResult.success) {
-      logger.warn('Supabase logout failed', { error: authResult.error });
-    }
+    // Since we're using JWT tokens, logout is handled client-side
+    // by removing the token. No server-side action needed.
+    // Optionally, you could implement a token blacklist here.
 
     res.status(200).json({
       success: true,
@@ -211,14 +208,13 @@ exports.logout = async (req, res, next) => {
 // Get current user
 exports.getCurrentUser = async (req, res, next) => {
   try {
-    // Get current user from Supabase Auth
-    const authResult = await auth.getCurrentUser();
-    if (!authResult.success) {
+    // User is already authenticated via middleware and added to req.user
+    if (!req.user) {
       throw new ValidationError('User not authenticated');
     }
 
-    // Get user profile from database
-    const userResult = await db.getUserById(authResult.data.id);
+    // Get user profile from database (already available in req.user, but refresh to get latest)
+    const userResult = await db.getUserById(req.user.id);
     if (!userResult.success) {
       throw new Error('User profile not found');
     }
@@ -288,6 +284,118 @@ exports.updateProfile = async (req, res, next) => {
 
   } catch (error) {
     logger.error('Profile update error', { error: error.message });
+    next(error);
+  }
+};
+
+// Request password reset (send reset email)
+exports.requestPasswordReset = async (req, res, next) => {
+  const { email } = req.body;
+
+  try {
+    logger.info('Password reset request', { email });
+
+    if (!email) {
+      throw new ValidationError('Email is required');
+    }
+
+    // Get user by email
+    const userResult = await db.getUserByEmail(email);
+    if (!userResult.success || !userResult.data) {
+      // Don't reveal if user exists for security
+      logger.info('Password reset requested for non-existent email', { email });
+      return res.status(200).json({
+        success: true,
+        message: 'If an account with that email exists, a password reset link has been sent.'
+      });
+    }
+
+    // TODO: Generate reset token and send email
+    // For now, we'll just return success
+    // In production, you should:
+    // 1. Generate a secure reset token
+    // 2. Store it in database with expiration
+    // 3. Send email with reset link
+    // 4. Return success message
+
+    logger.info('Password reset requested', { userId: userResult.data.id, email });
+
+    res.status(200).json({
+      success: true,
+      message: 'If an account with that email exists, a password reset link has been sent.',
+      data: {
+        // In production, don't include this - it's just for testing
+        // You can remove this after implementing email sending
+        note: 'Password reset email functionality not yet implemented. Use the reset endpoint directly if you have the token.'
+      }
+    });
+
+  } catch (error) {
+    logger.error('Password reset request error', { error: error.message });
+    next(error);
+  }
+};
+
+// Reset password (with token or for migrated users)
+exports.resetPassword = async (req, res, next) => {
+  const { email, newPassword, resetToken } = req.body;
+
+  try {
+    logger.info('Password reset attempt', { email, hasToken: !!resetToken });
+
+    if (!email || !newPassword) {
+      throw new ValidationError('Email and new password are required');
+    }
+
+    if (newPassword.length < 6) {
+      throw new ValidationError('Password must be at least 6 characters long');
+    }
+
+    // Get user by email
+    const userResult = await db.getUserByEmail(email, true);
+    if (!userResult.success || !userResult.data) {
+      throw new ValidationError('User not found');
+    }
+
+    const user = userResult.data;
+
+    // TODO: Verify reset token if provided
+    // For now, we allow password reset for users without password_hash (migrated users)
+    // In production, you should verify the reset token
+    if (resetToken) {
+      // Verify reset token here
+      // const tokenValid = await verifyResetToken(email, resetToken);
+      // if (!tokenValid) {
+      //   throw new ValidationError('Invalid or expired reset token');
+      // }
+      logger.info('Reset token provided (verification not yet implemented)', { email });
+    } else if (user.password_hash) {
+      // If user has a password, require a reset token
+      throw new ValidationError('Reset token is required for users with existing passwords');
+    }
+
+    // Hash new password
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+
+    // Update user password
+    const updateResult = await db.updateUser(user.id, { password_hash: hashedPassword });
+    if (!updateResult.success) {
+      throw new Error(updateResult.error);
+    }
+
+    logger.info('Password reset successful', { userId: user.id, email });
+
+    res.status(200).json({
+      success: true,
+      message: 'Password has been reset successfully. You can now log in with your new password.',
+      data: {
+        email: user.email
+      }
+    });
+
+  } catch (error) {
+    logger.error('Password reset error', { error: error.message });
     next(error);
   }
 }; 

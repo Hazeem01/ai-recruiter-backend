@@ -6,7 +6,9 @@ const {
   login, 
   logout, 
   getCurrentUser, 
-  updateProfile 
+  updateProfile,
+  requestPasswordReset,
+  resetPassword
 } = require('../controllers/authController');
 const { 
   validateAuthRegistration, 
@@ -38,5 +40,9 @@ router.post('/login', validateAuthLogin, handleValidationErrors, login);
 router.post('/logout', logout);
 router.get('/me', authenticateToken, getCurrentUser);
 router.put('/profile', authenticateToken, updateProfile);
+
+// Password reset endpoints
+router.post('/password/reset-request', requestPasswordReset);
+router.post('/password/reset', resetPassword);
 
 module.exports = router; 

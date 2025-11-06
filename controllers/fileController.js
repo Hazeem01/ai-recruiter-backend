@@ -1,6 +1,6 @@
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
-const { storage, db, BUCKETS } = require('../utils/supabaseClient');
+const { storage, db, BUCKETS } = require('../utils/dbClient');
 const logger = require('../utils/logger');
 const { ValidationError } = require('../middleware/errorHandler');
 
@@ -372,7 +372,7 @@ exports.debugFileStatus = async (req, res, next) => {
     }
 
     // Check if file exists in storage
-    const { supabase } = require('../utils/supabaseClient');
+    const { storage: storageClient } = require('../utils/dbClient');
     const { data: fileList, error: listError } = await supabase.storage
       .from(fileResult.data.bucket_name)
       .list(fileResult.data.file_path.split('/').slice(0, -1).join('/'));
@@ -449,39 +449,36 @@ exports.testUpload = async (req, res, next) => {
     });
 
     // Test storage upload step by step
-    const { supabase } = require('../utils/supabaseClient');
+    const { storage: storageClient } = require('../utils/dbClient');
     
-    // Step 1: Test bucket access
-    const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
-    logger.info('Available buckets', { buckets: buckets?.map(b => b.name), error: bucketError?.message });
-    
-    // Step 2: Test file upload
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('resumes')
-      .upload(filePath, file.buffer, {
+    // Step 1: Test file upload
+    const uploadResult = await storage.uploadFile(
+      BUCKETS.RESUMES,
+      filePath,
+      file.buffer,
+      {
         contentType: file.mimetype,
         upsert: false
-      });
+      }
+    );
     
     logger.info('Upload result', { 
-      success: !uploadError, 
-      error: uploadError?.message,
-      data: uploadData 
+      success: uploadResult.success, 
+      error: uploadResult.error,
+      data: uploadResult.data 
     });
 
-    if (uploadError) {
-      throw new Error(`Upload failed: ${uploadError.message}`);
+    if (!uploadResult.success) {
+      throw new Error(`Upload failed: ${uploadResult.error}`);
     }
 
-    // Step 3: Test file download
-    const { data: downloadData, error: downloadError } = await supabase.storage
-      .from('resumes')
-      .download(filePath);
+    // Step 2: Test file download
+    const downloadResult = await storage.downloadFile(BUCKETS.RESUMES, filePath);
     
     logger.info('Download test result', { 
-      success: !downloadError, 
-      error: downloadError?.message,
-      downloadSize: downloadData?.length 
+      success: downloadResult.success, 
+      error: downloadResult.error,
+      downloadSize: downloadResult.data?.length 
     });
 
     res.status(200).json({

@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { supabase } = require('../utils/supabaseClient');
+const { db } = require('../utils/dbClient');
 const logger = require('../utils/logger');
 
 // Middleware to authenticate JWT tokens
@@ -21,13 +21,9 @@ const authenticateToken = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
     // Get user from database
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', decoded.userId)
-      .single();
+    const userResult = await db.getUserById(decoded.userId);
 
-    if (error || !user) {
+    if (!userResult.success || !userResult.data) {
       logger.warn('Invalid token - user not found', { userId: decoded.userId });
       return res.status(401).json({
         success: false,
@@ -36,6 +32,8 @@ const authenticateToken = async (req, res, next) => {
         }
       });
     }
+
+    const user = userResult.data;
 
     // Add user to request object
     req.user = user;
@@ -144,14 +142,10 @@ const optionalAuth = async (req, res, next) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', decoded.userId)
-      .single();
+    const userResult = await db.getUserById(decoded.userId);
 
-    if (!error && user) {
-      req.user = user;
+    if (userResult.success && userResult.data) {
+      req.user = userResult.data;
     }
 
     next();

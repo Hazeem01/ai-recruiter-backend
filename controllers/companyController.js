@@ -1,4 +1,4 @@
-const { db } = require('../utils/supabaseClient');
+const { db } = require('../utils/dbClient');
 const logger = require('../utils/logger');
 const { ValidationError } = require('../middleware/errorHandler');
 

@@ -1,5 +1,5 @@
 const logger = require('../utils/logger');
-const { supabase } = require('../utils/supabaseClient');
+const { db } = require('../utils/dbClient');
 
 // In-memory storage for rate limiting analytics (in production, use Redis)
 const rateLimitStats = new Map();
@@ -11,34 +11,22 @@ exports.getApiAnalytics = async (req, res, next) => {
     logger.info('Fetching API analytics', { startDate, endDate, groupBy });
 
     // Get user statistics
-    const { data: users, error: usersError } = await supabase
-      .from('users')
-      .select('id, created_at, role, is_pro');
+    const usersResult = await db.getCompanyUsers(null); // Get all users (we'll need a new method)
+    // For now, let's use a direct query approach
+    const { pool } = require('../utils/databaseClient');
+    const client = await pool.connect();
+    
+    try {
+      const usersQuery = await client.query('SELECT id, created_at, role, is_pro FROM users');
+      const users = usersQuery.rows;
 
-    if (usersError) {
-      logger.error('Error fetching users for analytics:', usersError);
-      return next(usersError);
-    }
+      // Get job statistics
+      const jobsQuery = await client.query('SELECT id, created_at, status FROM jobs');
+      const jobs = jobsQuery.rows;
 
-    // Get job statistics
-    const { data: jobs, error: jobsError } = await supabase
-      .from('jobs')
-      .select('id, created_at, status');
-
-    if (jobsError) {
-      logger.error('Error fetching jobs for analytics:', jobsError);
-      return next(jobsError);
-    }
-
-    // Get candidate statistics
-    const { data: candidates, error: candidatesError } = await supabase
-      .from('candidates')
-      .select('id, created_at, status');
-
-    if (candidatesError) {
-      logger.error('Error fetching candidates for analytics:', candidatesError);
-      return next(candidatesError);
-    }
+      // Get candidate statistics
+      const candidatesQuery = await client.query('SELECT id, created_at, status FROM candidates');
+      const candidates = candidatesQuery.rows;
 
     // Calculate analytics
     const analytics = {
@@ -75,10 +63,13 @@ exports.getApiAnalytics = async (req, res, next) => {
       }
     };
 
-    res.status(200).json({
-      success: true,
-      data: analytics
-    });
+      res.status(200).json({
+        success: true,
+        data: analytics
+      });
+    } finally {
+      client.release();
+    }
 
   } catch (error) {
     logger.error('Error generating analytics:', error);
@@ -142,10 +133,11 @@ exports.getSystemHealth = async (req, res, next) => {
 
     // Test database connection
     try {
-      const { error } = await supabase.from('users').select('count').limit(1);
-      if (error) {
+      const { testConnection } = require('../utils/databaseClient');
+      const isConnected = await testConnection();
+      if (!isConnected) {
         health.database = 'unhealthy';
-        health.databaseError = error.message;
+        health.databaseError = 'Connection test failed';
       }
     } catch (dbError) {
       health.database = 'unhealthy';

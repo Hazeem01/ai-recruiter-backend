@@ -2,7 +2,7 @@ const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const axios = require('axios');
 const cheerio = require('cheerio');
-const { db, storage, BUCKETS } = require('../utils/supabaseClient');
+const { db, storage, BUCKETS } = require('../utils/dbClient');
 const logger = require('../utils/logger');
 const { ValidationError } = require('../middleware/errorHandler');
 const { log } = require('winston');
@@ -133,7 +133,7 @@ exports.parseResume = async (req, res, next) => {
     const path = require('path');
     const pdfParse = require('pdf-parse');
     const mammoth = require('mammoth');
-    const { supabase } = require('../utils/supabaseClient');
+    const { storage } = require('../utils/dbClient');
     
     let extractedText = '';
     
@@ -150,19 +150,22 @@ exports.parseResume = async (req, res, next) => {
       hasPublicUrl: !!fileResult.data.file_url
     });
     
-    // Download the file from Supabase storage (works for both public and private files)
-    const { data: fileBuffer, error: downloadError } = await supabase.storage
-      .from(fileResult.data.bucket_name)
-      .download(fileResult.data.file_path);
+    // Download the file from storage
+    const downloadResult = await storage.downloadFile(
+      fileResult.data.bucket_name,
+      fileResult.data.file_path
+    );
     
-    if (downloadError) {
+    if (!downloadResult.success) {
       logger.error('Download failed', { 
-        error: downloadError.message,
+        error: downloadResult.error,
         bucket: fileResult.data.bucket_name,
         path: fileResult.data.file_path
       });
-      throw new Error(`Failed to download file: ${downloadError.message}`);
+      throw new Error(`Failed to download file: ${downloadResult.error}`);
     }
+    
+    const fileBuffer = downloadResult.data;
     
     if (!fileBuffer || fileBuffer.length === 0) {
       throw new Error('Downloaded file is empty');

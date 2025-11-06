@@ -1,0 +1,69 @@
+name: ai-recruiter-backend
+region: nyc
+services:
+- name: api
+  github:
+    repo: Hazeem01/ai-recruiter-backend
+    branch: main
+    deploy_on_push: true
+  run_command: npm start
+  environment_slug: node-js
+  instance_count: 1
+  instance_size_slug: basic-xxs
+  http_port: 3001
+  health_check:
+    http_path: /health
+    initial_delay_seconds: 30
+    period_seconds: 10
+    timeout_seconds: 5
+    success_threshold: 1
+    failure_threshold: 3
+  envs:
+  - key: NODE_ENV
+    value: production
+    scope: RUN_TIME
+  - key: PORT
+    value: "3001"
+    scope: RUN_TIME
+  - key: DATABASE_URL
+    value: ${db.DATABASE_URL}
+    scope: RUN_TIME
+    type: SECRET
+  - key: SPACES_ENDPOINT
+    value: ${spaces.SPACES_ENDPOINT}
+    scope: RUN_TIME
+    type: SECRET
+  - key: SPACES_KEY
+    value: ${spaces.SPACES_KEY}
+    scope: RUN_TIME
+    type: SECRET
+  - key: SPACES_SECRET
+    value: ${spaces.SPACES_SECRET}
+    scope: RUN_TIME
+    type: SECRET
+  - key: SPACES_BUCKET
+    value: ${spaces.SPACES_BUCKET}
+    scope: RUN_TIME
+    type: SECRET
+  - key: SPACES_REGION
+    value: ${spaces.SPACES_REGION}
+    scope: RUN_TIME
+    type: SECRET
+  - key: JWT_SECRET
+    value: ${app.JWT_SECRET}
+    scope: RUN_TIME
+    type: SECRET
+  - key: OPENAI_API_KEY
+    value: ${app.OPENAI_API_KEY}
+    scope: RUN_TIME
+    type: SECRET
+
+databases:
+- name: db
+  engine: PG
+  version: "15"
+  production: false
+  cluster_name: ai-recruiter-db
+  db_name: ai_recruiter
+  db_user: ai_recruiter_user
+

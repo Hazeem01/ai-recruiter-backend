@@ -33,10 +33,10 @@ A comprehensive **two-sided recruitment platform** that serves both **recruiters
 ## 🛠️ Technology Stack
 
 - **Runtime**: Node.js with Express.js
-- **Database**: Supabase (PostgreSQL)
-- **Storage**: Supabase Storage
-- **Authentication**: Supabase Auth + JWT
-- **AI**: Ollama (Local AI)
+- **Database**: DigitalOcean PostgreSQL (PostgreSQL 15+)
+- **Storage**: DigitalOcean Spaces (S3-compatible)
+- **Authentication**: Custom JWT + bcrypt
+- **AI**: OpenAI / Ollama (Local AI)
 - **PDF Generation**: PDFKit
 - **Logging**: Winston
 - **Documentation**: Swagger/OpenAPI 3.0
@@ -47,8 +47,10 @@ A comprehensive **two-sided recruitment platform** that serves both **recruiters
 
 - Node.js (v18 or higher)
 - npm or yarn
-- Supabase account and project
-- Ollama (for local AI)
+- DigitalOcean account (with GitHub Education Pack credits)
+- PostgreSQL database (DigitalOcean Managed PostgreSQL)
+- DigitalOcean Spaces (for file storage)
+- OpenAI API key (optional, for AI features)
 
 ## 🚀 Installation
 
@@ -74,22 +76,25 @@ A comprehensive **two-sided recruitment platform** that serves both **recruiters
    # Server Configuration
    PORT=3001
    NODE_ENV=development
+   FRONTEND_URL=http://localhost:8081
    
-   # AI Configuration (Hugging Face + Llama 2 70B)
-   AI_PROVIDER=huggingface
-   OPENAI_API_KEY=your_huggingface_api_token
-   HUGGINGFACE_MODEL=meta-llama/Llama-2-70b-chat-hf
+   # Database Configuration (PostgreSQL)
+   DATABASE_URL=postgresql://user:password@host:port/database?sslmode=require
    
-   # Supabase Configuration
-   SUPABASE_URL=your_supabase_project_url
-   SUPABASE_ANON_KEY=your_supabase_anon_key
-   SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+   # DigitalOcean Spaces Configuration (S3-compatible storage)
+   SPACES_ENDPOINT=https://nyc3.digitaloceanspaces.com
+   SPACES_KEY=your-spaces-access-key
+   SPACES_SECRET=your-spaces-secret-key
+   SPACES_BUCKET=your-bucket-name
+   SPACES_REGION=nyc3
+   
+   # AI Configuration
+   OPENAI_API_KEY=your_openai_api_key
+   OPENAI_MODEL=gpt-3.5-turbo
    
    # JWT Configuration
    JWT_SECRET=your_jwt_secret_here
-   
-   # Frontend URL (for CORS)
-   FRONTEND_URL=http://localhost:3000
+   JWT_EXPIRES_IN=24h
    ```
 
 4. **Start the development server**
@@ -131,6 +136,8 @@ Recruiters can register with company information:
 - `POST /api/v1/auth/login` - User login
 - `POST /api/v1/auth/logout` - User logout
 - `GET /api/v1/auth/me` - Get current user
+- `POST /api/v1/auth/password/reset-request` - Request password reset
+- `POST /api/v1/auth/password/reset` - Reset password (supports migrated users without password hash)
 
 #### Recruiter Dashboard
 - `GET /api/v1/dashboard/stats` - Dashboard metrics
@@ -197,10 +204,12 @@ Recruiters can register with company information:
 - `files` - File uploads and metadata
 - `pro_signups` - Pro version signup data
 
-### Storage Buckets
+### Storage Buckets (DigitalOcean Spaces)
 - `resumes` - Resume file storage
 - `files` - General file storage
 - `avatars` - User avatar storage
+
+**Note**: All buckets are created in a single DigitalOcean Spaces bucket with folder structure, or as separate buckets depending on your configuration.
 
 ## 🔧 Configuration
 
@@ -210,11 +219,14 @@ Recruiters can register with company information:
 |----------|-------------|----------|
 | `PORT` | Server port | No (default: 3001) |
 | `NODE_ENV` | Environment mode | No (default: development) |
-| `AI_PROVIDER` | AI provider (ollama) | Yes |
-| `SUPABASE_URL` | Supabase project URL | Yes |
-| `SUPABASE_ANON_KEY` | Supabase anonymous key | Yes |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key | Yes |
+| `DATABASE_URL` | PostgreSQL connection string | Yes |
+| `SPACES_ENDPOINT` | DigitalOcean Spaces endpoint | Yes |
+| `SPACES_KEY` | Spaces access key | Yes |
+| `SPACES_SECRET` | Spaces secret key | Yes |
+| `SPACES_BUCKET` | Spaces bucket name | No (if using separate buckets) |
+| `SPACES_REGION` | Spaces region | Yes |
 | `JWT_SECRET` | JWT signing secret | Yes |
+| `OPENAI_API_KEY` | OpenAI API key (for AI features) | Optional |
 | `FRONTEND_URL` | Frontend URL for CORS | No |
 
 ### Rate Limiting
@@ -256,14 +268,25 @@ The application uses Winston for comprehensive logging:
    ```
 
 2. **Database Setup**
-   - Create Supabase project
-   - Set up database tables
-   - Configure storage buckets
+   - Create DigitalOcean PostgreSQL database
+   - Run migrations: `npm run migrate`
+   - Create DigitalOcean Spaces buckets: `resumes`, `files`, `avatars`
+   - Configure Spaces access keys
 
 3. **Start Production Server**
    ```bash
    npm start
    ```
+
+### DigitalOcean App Platform Deployment
+
+The application includes a `.do/app.yaml` configuration file for easy deployment to DigitalOcean App Platform:
+
+1. **Connect your repository** to DigitalOcean App Platform
+2. **Configure environment variables** in the App Platform dashboard
+3. **Deploy** - App Platform will automatically detect the `.do/app.yaml` file
+
+See `DEPLOYMENT_CHECKLIST.md` for detailed deployment instructions.
 
 ### Docker Deployment
 
@@ -286,11 +309,13 @@ CMD ["npm", "start"]
    npm run test:db
    ```
 
-2. **Run Migrations** (if using Supabase SQL Editor)
+2. **Run Database Migrations**
    ```bash
-   # Copy contents of migrations/001_initial_schema.sql
-   # Copy contents of migrations/002_company_schema.sql
-   # Run in Supabase SQL Editor
+   # Run all migrations
+   npm run migrate
+   
+   # This will execute all SQL files in the migrations/ directory
+   # in order: 001_initial_schema.sql, 002_company_schema.sql, etc.
    ```
 
 ### Automated Testing
@@ -375,13 +400,22 @@ For support and questions:
 
 ## 🔄 Changelog
 
+### v2.0.0 - DigitalOcean Migration
+- **Cloud Migration** - Migrated from Supabase/Render to DigitalOcean
+- **Database** - Replaced Supabase PostgreSQL with DigitalOcean Managed PostgreSQL
+- **Storage** - Replaced Supabase Storage with DigitalOcean Spaces (S3-compatible)
+- **Authentication** - Replaced Supabase Auth with custom JWT + bcrypt implementation
+- **Password Reset** - Added password reset functionality for migrated users
+- **SSL Support** - Added SSL certificate handling for DigitalOcean PostgreSQL
+- **Deployment** - Added DigitalOcean App Platform configuration (`.do/app.yaml`)
+
 ### v1.1.0
 - **Company Management System** - Complete company schema and management
 - **Enhanced Registration** - Recruiters can register with company information
 - **Analytics Dashboard** - API usage and system health monitoring
 - **Improved Validation** - Dynamic request validation middleware
 - **Enhanced Testing** - Comprehensive test suite with company features
-- **Database Migrations** - Automated migration system for Supabase
+- **Database Migrations** - Automated migration system
 
 ### v1.0.0
 - Initial release with two-sided marketplace
