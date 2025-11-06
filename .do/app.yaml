@@ -26,7 +26,7 @@ services:
     value: "3001"
     scope: RUN_TIME
   - key: DATABASE_URL
-    value: ${db.DATABASE_URL}
+    value: "${production-database.DATABASE_URL}"
     scope: RUN_TIME
     type: SECRET
   - key: SPACES_ENDPOINT
@@ -58,12 +58,7 @@ services:
     scope: RUN_TIME
     type: SECRET
 
-databases:
-- name: db
-  engine: PG
-  version: "15"
-  production: false
-  cluster_name: ai-recruiter-db
-  db_name: ai_recruiter
-  db_user: ai_recruiter_user
+# Note: Database component should be linked through DigitalOcean App Platform UI
+# When linking, name it "production-database" to match the reference above
+# Or update the DATABASE_URL reference to match your component name
 
