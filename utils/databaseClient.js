@@ -10,14 +10,44 @@ const getDatabaseConfig = () => {
     // Parse DATABASE_URL to extract connection parameters
     // This gives us more control over SSL configuration
     try {
-      const url = new URL(process.env.DATABASE_URL);
+      let databaseUrl = process.env.DATABASE_URL;
+      
+      // Log sanitized URL for debugging (hide password)
+      const sanitizedUrl = databaseUrl.replace(/:([^:@]+)@/, ':****@');
+      logger.info('Parsing DATABASE_URL', { 
+        urlLength: databaseUrl.length,
+        hasProtocol: databaseUrl.includes('://'),
+        sanitizedUrl: sanitizedUrl.substring(0, 100) // First 100 chars
+      });
+      
+      // Ensure URL has protocol
+      if (!databaseUrl.includes('://')) {
+        // If no protocol, assume postgresql://
+        databaseUrl = `postgresql://${databaseUrl}`;
+        logger.info('Added postgresql:// protocol to DATABASE_URL');
+      }
+      
+      const url = new URL(databaseUrl);
       const sslMode = url.searchParams.get('sslmode') || 'require';
+      
+      // Validate required components
+      if (!url.hostname || !url.username || !url.password) {
+        throw new Error('DATABASE_URL missing required components (hostname, username, or password)');
+      }
+      
+      // Extract database name from pathname
+      let databaseName = url.pathname.slice(1); // Remove leading '/'
+      if (!databaseName || databaseName === '') {
+        // If no database in URL, try environment variable or default
+        databaseName = process.env.DB_NAME || 'postgres';
+        logger.warn('No database name in DATABASE_URL, using fallback', { databaseName });
+      }
       
       // Build connection config from parsed URL
       const config = {
         host: url.hostname,
         port: parseInt(url.port) || 5432,
-        database: url.pathname.slice(1), // Remove leading '/'
+        database: databaseName,
         user: url.username,
         password: url.password,
         // Always set SSL for DigitalOcean (they require it)
@@ -33,15 +63,37 @@ const getDatabaseConfig = () => {
         host: config.host,
         port: config.port,
         database: config.database,
+        user: config.user,
         sslEnabled: true
       });
       
       return config;
     } catch (error) {
-      logger.error('Error parsing DATABASE_URL, falling back to connectionString', { error: error.message });
+      logger.error('Error parsing DATABASE_URL, falling back to connectionString', { 
+        error: error.message,
+        errorStack: error.stack
+      });
+      
+      // Log sanitized DATABASE_URL for debugging
+      const sanitizedUrl = process.env.DATABASE_URL.replace(/:([^:@]+)@/, ':****@');
+      logger.warn('Using connectionString fallback', {
+        urlLength: process.env.DATABASE_URL.length,
+        sanitizedUrl: sanitizedUrl.substring(0, 100)
+      });
+      
       // Fallback to connectionString if parsing fails
+      // Ensure connectionString has proper format
+      let connectionString = process.env.DATABASE_URL;
+      if (!connectionString.includes('://')) {
+        connectionString = `postgresql://${connectionString}`;
+      }
+      // Ensure SSL mode is set
+      if (!connectionString.includes('sslmode=')) {
+        connectionString += (connectionString.includes('?') ? '&' : '?') + 'sslmode=require';
+      }
+      
       return {
-        connectionString: process.env.DATABASE_URL,
+        connectionString: connectionString,
         ssl: {
           rejectUnauthorized: false // Required for DigitalOcean's self-signed certificates
         },
