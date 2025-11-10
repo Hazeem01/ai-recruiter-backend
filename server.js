@@ -24,7 +24,7 @@ try {
   swaggerDocument = {
     openapi: '3.0.3',
     info: {
-      title: 'AI Recruiter Backend API',
+      title: 'Jobsilo Backend API',
       version: '1.0.0',
       description: 'API documentation'
     },
@@ -51,7 +51,7 @@ app.use(helmet({
 
 // CORS configuration
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'https://jobsilo.hazeem.dev' || 'http://localhost:8081',
+  origin: process.env.FRONTEND_URL || 'https://jobsilo.hazeem.dev' || 'http://localhost:8080',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
@@ -124,7 +124,7 @@ app.get(`${API_VERSION}`, (req, res) => {
   res.status(200).json({
     success: true,
     data: {
-      message: 'AI Recruiter Backend API',
+      message: 'Jobsilo Backend API',
       version: '1.0.0',
       endpoints: {
         auth: `${API_VERSION}/auth`,

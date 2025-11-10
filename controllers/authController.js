@@ -1,8 +1,10 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { db } = require('../utils/dbClient');
 const logger = require('../utils/logger');
 const { ValidationError } = require('../middleware/errorHandler');
+const { sendPasswordResetEmail } = require('../utils/emailService');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -310,24 +312,63 @@ exports.requestPasswordReset = async (req, res, next) => {
       });
     }
 
-    // TODO: Generate reset token and send email
-    // For now, we'll just return success
-    // In production, you should:
-    // 1. Generate a secure reset token
-    // 2. Store it in database with expiration
-    // 3. Send email with reset link
-    // 4. Return success message
+    const user = userResult.data;
 
-    logger.info('Password reset requested', { userId: userResult.data.id, email });
+    // Generate secure reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    
+    // Set expiration to 1 hour from now
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 1);
+
+    // Store token in database
+    const tokenResult = await db.createPasswordResetToken(
+      user.id,
+      resetToken,
+      expiresAt.toISOString()
+    );
+
+    if (!tokenResult.success) {
+      logger.error('Failed to create password reset token', { 
+        userId: user.id, 
+        error: tokenResult.error 
+      });
+      throw new Error('Failed to create password reset token');
+    }
+
+    // Send password reset email
+    const emailResult = await sendPasswordResetEmail(
+      user.email,
+      resetToken,
+      user.first_name || 'User'
+    );
+
+    if (!emailResult.success) {
+      logger.warn('Failed to send password reset email', { 
+        email: user.email, 
+        error: emailResult.error 
+      });
+      if (process.env.NODE_ENV === 'development' && emailResult.resetLink) {
+        return res.status(200).json({
+          success: true,
+          message: 'If an account with that email exists, a password reset link has been sent.',
+          data: {
+            // Only in development - remove in production
+            resetLink: emailResult.resetLink,
+            note: 'Email service not configured. Use this link for testing.'
+          }
+        });
+      }
+    }
+
+    logger.info('Password reset requested successfully', { 
+      userId: user.id, 
+      email: user.email 
+    });
 
     res.status(200).json({
       success: true,
-      message: 'If an account with that email exists, a password reset link has been sent.',
-      data: {
-        // In production, don't include this - it's just for testing
-        // You can remove this after implementing email sending
-        note: 'Password reset email functionality not yet implemented. Use the reset endpoint directly if you have the token.'
-      }
+      message: 'If an account with that email exists, a password reset link has been sent.'
     });
 
   } catch (error) {
@@ -336,43 +377,43 @@ exports.requestPasswordReset = async (req, res, next) => {
   }
 };
 
-// Reset password (with token or for migrated users)
+// Reset password (with token)
 exports.resetPassword = async (req, res, next) => {
-  const { email, newPassword, resetToken } = req.body;
+  const { resetToken, newPassword } = req.body;
 
   try {
-    logger.info('Password reset attempt', { email, hasToken: !!resetToken });
+    logger.info('Password reset attempt', { hasToken: !!resetToken });
 
-    if (!email || !newPassword) {
-      throw new ValidationError('Email and new password are required');
+    if (!resetToken || !newPassword) {
+      throw new ValidationError('Reset token and new password are required');
     }
 
     if (newPassword.length < 6) {
       throw new ValidationError('Password must be at least 6 characters long');
     }
 
-    // Get user by email
-    const userResult = await db.getUserByEmail(email, true);
+    // Verify and get reset token from database
+    const tokenResult = await db.getPasswordResetToken(resetToken);
+    if (!tokenResult.success || !tokenResult.data) {
+      throw new ValidationError('Invalid or expired reset token');
+    }
+
+    const tokenData = tokenResult.data;
+    const userId = tokenData.user_id;
+
+    // Check if token is expired (additional check, though database query already filters expired)
+    const expiresAt = new Date(tokenData.expires_at);
+    if (expiresAt < new Date()) {
+      throw new ValidationError('Reset token has expired');
+    }
+
+    // Get user to verify they still exist
+    const userResult = await db.getUserByEmail(tokenData.email, true);
     if (!userResult.success || !userResult.data) {
       throw new ValidationError('User not found');
     }
 
     const user = userResult.data;
-
-    // TODO: Verify reset token if provided
-    // For now, we allow password reset for users without password_hash (migrated users)
-    // In production, you should verify the reset token
-    if (resetToken) {
-      // Verify reset token here
-      // const tokenValid = await verifyResetToken(email, resetToken);
-      // if (!tokenValid) {
-      //   throw new ValidationError('Invalid or expired reset token');
-      // }
-      logger.info('Reset token provided (verification not yet implemented)', { email });
-    } else if (user.password_hash) {
-      // If user has a password, require a reset token
-      throw new ValidationError('Reset token is required for users with existing passwords');
-    }
 
     // Hash new password
     const saltRounds = 10;
@@ -384,7 +425,10 @@ exports.resetPassword = async (req, res, next) => {
       throw new Error(updateResult.error);
     }
 
-    logger.info('Password reset successful', { userId: user.id, email });
+    // Mark token as used
+    await db.markPasswordResetTokenAsUsed(resetToken);
+
+    logger.info('Password reset successful', { userId: user.id, email: user.email });
 
     res.status(200).json({
       success: true,

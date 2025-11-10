@@ -145,7 +145,8 @@ const TABLES = {
   INTERVIEWS: 'interviews',
   CHAT_HISTORY: 'chat_history',
   FILES: 'files',
-  PRO_SIGNUPS: 'pro_signups'
+  PRO_SIGNUPS: 'pro_signups',
+  PASSWORD_RESET_TOKENS: 'password_reset_tokens'
 };
 
 // User roles
@@ -1054,6 +1055,104 @@ const db = {
       return { success: true, data: result.rows[0] };
     } catch (error) {
       logger.error('Error creating pro signup', { error: error.message });
+      return { success: false, error: error.message };
+    } finally {
+      client.release();
+    }
+  },
+
+  // Password reset token operations
+  async createPasswordResetToken(userId, token, expiresAt) {
+    const client = await pool.connect();
+    try {
+      // Invalidate any existing tokens for this user
+      await client.query(
+        `UPDATE ${TABLES.PASSWORD_RESET_TOKENS} SET used = TRUE WHERE user_id = $1 AND used = FALSE`,
+        [userId]
+      );
+
+      // Create new token
+      const tokenId = uuidv4();
+      const query = `
+        INSERT INTO ${TABLES.PASSWORD_RESET_TOKENS} (id, user_id, token, expires_at, created_at)
+        VALUES ($1, $2, $3, $4, NOW())
+        RETURNING *
+      `;
+      const values = [tokenId, userId, token, expiresAt];
+
+      const result = await client.query(query, values);
+      return { success: true, data: result.rows[0] };
+    } catch (error) {
+      logger.error('Error creating password reset token', { error: error.message });
+      return { success: false, error: error.message };
+    } finally {
+      client.release();
+    }
+  },
+
+  async getPasswordResetToken(token) {
+    const client = await pool.connect();
+    try {
+      const query = `
+        SELECT prt.*, u.email, u.first_name, u.last_name
+        FROM ${TABLES.PASSWORD_RESET_TOKENS} prt
+        INNER JOIN ${TABLES.USERS} u ON prt.user_id = u.id
+        WHERE prt.token = $1 AND prt.used = FALSE AND prt.expires_at > NOW()
+        ORDER BY prt.created_at DESC
+        LIMIT 1
+      `;
+      const result = await client.query(query, [token]);
+
+      if (result.rows.length === 0) {
+        return { success: false, error: 'Invalid or expired token' };
+      }
+
+      return { success: true, data: result.rows[0] };
+    } catch (error) {
+      logger.error('Error getting password reset token', { error: error.message });
+      return { success: false, error: error.message };
+    } finally {
+      client.release();
+    }
+  },
+
+  async markPasswordResetTokenAsUsed(token) {
+    const client = await pool.connect();
+    try {
+      const query = `
+        UPDATE ${TABLES.PASSWORD_RESET_TOKENS}
+        SET used = TRUE
+        WHERE token = $1
+        RETURNING *
+      `;
+      const result = await client.query(query, [token]);
+
+      if (result.rows.length === 0) {
+        return { success: false, error: 'Token not found' };
+      }
+
+      return { success: true, data: result.rows[0] };
+    } catch (error) {
+      logger.error('Error marking password reset token as used', { error: error.message });
+      return { success: false, error: error.message };
+    } finally {
+      client.release();
+    }
+  },
+
+  async cleanupExpiredTokens() {
+    const client = await pool.connect();
+    try {
+      // Delete tokens that are expired and unused (older than 7 days)
+      const query = `
+        DELETE FROM ${TABLES.PASSWORD_RESET_TOKENS}
+        WHERE expires_at < NOW() - INTERVAL '7 days' AND used = FALSE
+      `;
+      const result = await client.query(query);
+      logger.info('Cleaned up expired password reset tokens', { count: result.rowCount });
+      return { success: true, deletedCount: result.rowCount };
+    } catch (error) {
+      logger.error('Error cleaning up expired tokens', { error: error.message });
       return { success: false, error: error.message };
     } finally {
       client.release();
