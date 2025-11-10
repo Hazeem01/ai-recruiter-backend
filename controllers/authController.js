@@ -304,7 +304,6 @@ exports.requestPasswordReset = async (req, res, next) => {
     // Get user by email
     const userResult = await db.getUserByEmail(email);
     if (!userResult.success || !userResult.data) {
-      // Don't reveal if user exists for security
       logger.info('Password reset requested for non-existent email', { email });
       return res.status(200).json({
         success: true,
